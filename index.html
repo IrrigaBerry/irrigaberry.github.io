@@ -161,7 +161,7 @@ select.cfg-input{cursor:pointer}
   <button class="tab active" onclick="showTab('status',this)">Status</button>
   <button class="tab" onclick="showTab('manual',this)">Manual</button>
   <button class="tab" onclick="showTab('config',this)">Configurar</button>
-  <button class="tab" onclick="showTab('sensores',this)">Sensores</button>
+  <button class="tab" id="tab-btn-sensores" onclick="showTab('sensores',this)">Sensores</button>
   <button class="tab" onclick="showTab('historico',this)">Histórico</button>
   <button class="tab" onclick="showTab('ferti',this)">Ferti</button>
   <button class="tab" onclick="showTab('rtc',this)">Relógio</button>
@@ -213,19 +213,19 @@ select.cfg-input{cursor:pointer}
 
   <!-- v1.5: aba Sensores — estação meteorológica + nós de substrato (Fase 1: só observação) -->
   <div id="tab-sensores" style="display:none">
-    <div class="card">
+    <div class="card" id="card-meteo">
       <div class="card-title">Estação meteorológica <span class="badge badge-muted" id="meteo-online" style="float:right">—</span></div>
       <div class="sens-grid" id="meteo-grid"></div>
       <div id="meteo-previsao" style="font-size:12px;color:var(--blue);font-weight:700;margin-top:10px;display:none"></div>
       <div id="meteo-alerta" style="margin-top:10px;display:none"></div>
     </div>
     <!-- Horas de frio (morango) — acumulado pelo serviço frio_morango.py no Pi -->
-    <div class="card">
+    <div class="card" id="card-frio">
       <div class="card-title">❄ Horas de frio — morango <span class="badge badge-muted" id="frio-badge" style="float:right">—</span></div>
       <div id="frio-content"><div style="color:var(--muted);font-size:13px">Aguardando dados de frio do Pi...</div></div>
       <div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5">Horas com temperatura ≤ <span id="frio-limiar">7,2</span> °C acumuladas na temporada. Quebra a dormência e garante brotação/frutificação uniformes.</div>
     </div>
-    <div class="card">
+    <div class="card" id="card-substrato">
       <div class="card-title">Substrato (nós LoRa)</div>
       <div id="substrato-list"><div style="color:var(--muted);font-size:13px">Nenhum nó de substrato reportando ainda</div></div>
     </div>
@@ -458,6 +458,7 @@ select.cfg-input{cursor:pointer}
 
 <script>
 var T='esp32_lavoura01';
+var recEstacao=false,recSubstrato=false; // v1.8: recursos opcionais por kit (flags no link)
 var client=null;
 var mqttUser='webapp'; // usuário MQTT conectado (pra montar <user>/frio_comando)
 var state={sectors:[],pump:false,current_sector:null,datetime:''};
@@ -514,13 +515,14 @@ function init(){
   var saved=JSON.parse(localStorage.getItem('mqtt_cfg')||'{}');
   var qs=new URLSearchParams(location.search);
   if(qs.toString()){
-    ['broker','port','user','pass','cliente'].forEach(function(k){
+    ['broker','port','user','pass','cliente','estacao','substrato'].forEach(function(k){
       var v=qs.get(k); if(v!==null&&v!=='')saved[k]=v;
     });
     localStorage.setItem('mqtt_cfg',JSON.stringify(saved));
     history.replaceState(null,'',location.pathname); // apaga a query (contém a senha!)
   }
   if(saved.cliente)aplicaCliente(saved.cliente);
+  aplicaRecursos(saved);
   if(saved.broker)document.getElementById('inp-broker').value=saved.broker;
   if(saved.port)document.getElementById('inp-port').value=saved.port;
   if(saved.user)document.getElementById('inp-user').value=saved.user;
@@ -538,6 +540,20 @@ function init(){
 function aplicaCliente(nome){
   var el=document.getElementById('hdr-cliente'); if(el)el.textContent=nome;
   document.title='IrrigaBerry — '+nome;
+}
+
+// v1.8: mostra/esconde recursos opcionais conforme o kit (flags no link).
+// Kit básico (controlador + injetora) não tem estação meteo nem substrato:
+// esconde a aba Sensores inteira. Ao vender esses add-ons, reemitir o link
+// com estacao=1 / substrato=1 — sem tocar código.
+function aplicaRecursos(cfg){
+  recEstacao=String(cfg.estacao)==='1';
+  recSubstrato=String(cfg.substrato)==='1';
+  var show=function(id,on){var el=document.getElementById(id); if(el)el.style.display=on?'':'none';};
+  show('card-meteo',recEstacao);
+  show('card-frio',recEstacao);      // horas de frio dependem da estação
+  show('card-substrato',recSubstrato);
+  show('tab-btn-sensores',recEstacao||recSubstrato); // aba some se não tem nenhum
 }
 
 function showTab(name,el){
@@ -576,11 +592,13 @@ function connect(){
     client.subscribe(T+'/irrigation/schedule');
     client.subscribe(T+'/irrigation/online');
     client.subscribe(T+'/irrigation/history'); // v1.4: histórico do Pi
-    // v1.5: substrato (nós LoRa republicados pelo controlador)
-    client.subscribe(T+'/+/leitura');
-    client.subscribe(T+'/+/online');
-    // v1.5: estação meteorológica (valores individuais retained)
-    client.subscribe('esp32_estacao01/meteo/#');
+    // v1.5: substrato (nós LoRa republicados pelo controlador) — só se o kit tem
+    if(recSubstrato){
+      client.subscribe(T+'/+/leitura');
+      client.subscribe(T+'/+/online');
+    }
+    // v1.5: estação meteorológica (valores individuais retained) — só se o kit tem
+    if(recEstacao)client.subscribe('esp32_estacao01/meteo/#');
     client.subscribe('fertigacao/status');
     client.subscribe('fertigacao/online');  // v1.5
     client.subscribe('fertigacao/curvas');  // v1.5: curvas/pares retained
