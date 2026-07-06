@@ -151,7 +151,7 @@ select.cfg-input{cursor:pointer}
 
 <div class="header">
   <div>
-    <div class="header-title">🌱 <span id="hdr-cliente">Irrigação</span> <span class="version-tag">v1.8.0</span></div>
+    <div class="header-title">🌱 <span id="hdr-cliente">Irrigação</span> <span class="version-tag">v1.8.1</span></div>
     <div class="header-sub" id="rtc-display">Morango semi-hidropônico</div>
   </div>
   <div class="conn-dot" id="conn-dot"></div>
@@ -287,7 +287,9 @@ select.cfg-input{cursor:pointer}
     <div class="card">
       <div class="card-title">Tambores (estoque)</div>
       <div id="tambores-list"><div style="color:var(--muted);font-size:13px">Aguardando dados da injetora...</div></div>
-      <div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5">A injetora subtrai o volume dosado via sensor de fluxo. Toque em "Reabasteci" depois de trocar o tambor — isso zera o alarme.</div>
+      <button class="btn-add" style="width:100%;padding:9px;margin-top:8px" onclick="abrirConfigTambores()">⚙ Configurar capacidades</button>
+      <div id="tambores-config" style="display:none;margin-top:10px"></div>
+      <div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5">A injetora subtrai o volume dosado via sensor de fluxo. Toque em "Reabasteci" depois de trocar o tambor — isso zera o alarme. Use "Configurar capacidades" pra ajustar o tamanho dos tambores deste kit (0 = bomba sem tambor).</div>
     </div>
 
     <!-- Dosado hoje: volume por bomba (nao somado) -->
@@ -1648,9 +1650,11 @@ function renderDosado(d){
 /*  Comando "Reabasteci" = MQTT {"cmd":"tambor_cheio","bomba":"X","litros":N}*/
 /* ===================================================================== */
 var BOMBA_ORDEM=['A1','A2','B1','B2','C1','C2'];
+var tamboresAtual={}; // v1.8: ultimas capacidades vistas (pra pre-preencher a config)
 function renderTambores(d){
   var el=document.getElementById('tambores-list');if(!el)return;
   var tb=(d&&d.tambores)||{};
+  tamboresAtual=tb;
   var alarmes=(d&&d.tambor_alarme)||{};
   var alguma=BOMBA_ORDEM.some(function(k){return tb[k]&&tb[k].capacidade_l>0;});
   if(!alguma){el.innerHTML='<div style="color:var(--muted);font-size:13px">Nenhum tambor configurado ainda</div>';return;}
@@ -1683,6 +1687,38 @@ function tamborCheio(bomba,capacidade){
   var payload={cmd:'tambor_cheio',bomba:bomba};
   if(litros!==''){var n=parseFloat(litros);if(isNaN(n)||n<=0){toast('Valor inválido');return;}payload.litros=n;}
   if(publishFerti(payload))toast('🛢 Tambor '+bomba+(litros?' = '+litros+' L':' (capacidade nominal)'));
+}
+
+// v1.8: configura a CAPACIDADE (litragem) de cada tambor — cada kit tem
+// tambores diferentes. Envia {cmd:'set_tambor',bomba,capacidade_l} (0 = sem
+// tambor). O firmware assume cheio ao configurar (restante = capacidade).
+function abrirConfigTambores(){
+  var el=document.getElementById('tambores-config');
+  if(el.style.display!=='none'){el.style.display='none';return;} // toggle
+  el.innerHTML=BOMBA_ORDEM.map(function(k){
+    var cap=(tamboresAtual[k]&&tamboresAtual[k].capacidade_l)||0;
+    return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0">'
+      +'<span style="font-family:var(--mono);font-weight:800;width:30px">'+k+'</span>'
+      +'<input type="number" min="0" step="1" id="capin-'+k+'" value="'+cap+'" '
+      +'style="flex:1;padding:7px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono)">'
+      +'<span style="color:var(--muted);font-size:12px">L</span></div>';
+  }).join('')
+  +'<button class="save-btn" style="margin-top:8px" onclick="salvarTambores()">Salvar capacidades</button>';
+  el.style.display='';
+}
+
+function salvarTambores(){
+  var enviados=0;
+  BOMBA_ORDEM.forEach(function(k){
+    var inp=document.getElementById('capin-'+k);if(!inp)return;
+    var v=parseFloat(inp.value);
+    if(isNaN(v)||v<0)return;
+    var atual=(tamboresAtual[k]&&tamboresAtual[k].capacidade_l)||0;
+    if(v===atual)return; // nao mudou — nao reenvia (evita zerar nivel a toa)
+    if(publishFerti({cmd:'set_tambor',bomba:k,capacidade_l:v}))enviados++;
+  });
+  document.getElementById('tambores-config').style.display='none';
+  toast(enviados?('🛢 '+enviados+' tambor(es) atualizado(s)'):'Nada mudou');
 }
 
 // v1.7: curvas vivem em `fertigacao/status` (campo `setores`, ja com
