@@ -151,7 +151,7 @@ select.cfg-input{cursor:pointer}
 
 <div class="header">
   <div>
-    <div class="header-title">🌱 <span id="hdr-cliente">Irrigação</span> <span class="version-tag">v1.8.1</span></div>
+    <div class="header-title">🌱 <span id="hdr-cliente">Irrigação</span> <span class="version-tag">v1.8.2</span></div>
     <div class="header-sub" id="rtc-display">Morango semi-hidropônico</div>
   </div>
   <div class="conn-dot" id="conn-dot"></div>
@@ -304,7 +304,7 @@ select.cfg-input{cursor:pointer}
     <div class="card">
       <div class="card-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span>Curva EC —</span>
-        <select id="ferti-setor-select" onchange="loadFertiCurva()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 8px;font-size:12px;font-weight:700">
+        <select id="ferti-setor-select" onchange="fertiCurvaDirty=null;loadFertiCurva()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 8px;font-size:12px;font-weight:700">
           <option value="">—</option>
         </select>
         <label style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer">
@@ -474,6 +474,7 @@ var fertiCurvas={},fertiSetores={},fertiSetoresHab={},fertiGlobalHab=true;
 var fertiClip=null,fertiClipFrom=null;
 // Edicao inline: idx do intervalo sendo editado no setor atual (null = add normal)
 var fertiEditIdx=null;
+var fertiCurvaDirty=null; // v1.8.2: sid com curva editada nao-salva (nao sobrescrever com o status)
 var irrigHistory=[]; // v1.4: vem do script no Pi via MQTT (tópico irrigation/history retain)
 var timerStart=null,timerSector=null,remainUntil=null;
 // v1.1: estados dos modais
@@ -1609,7 +1610,7 @@ function renderFertiStatus(){
       var sid=String(s.id);
       ensureSetor(s.id);
       if(s.par)fertiSetores[sid]=s.par;
-      if(Array.isArray(s.curva))fertiCurvas[sid]=s.curva;
+      if(Array.isArray(s.curva)&&sid!==String(fertiCurvaDirty))fertiCurvas[sid]=s.curva; // v1.8.2: preserva edicao nao-salva
       if(typeof s.ferti_habilitada!=='undefined')fertiSetoresHab[sid]=!!s.ferti_habilitada;
     });
   }
@@ -1622,7 +1623,9 @@ function renderFertiStatus(){
   if(document.getElementById('tab-ferti').style.display!=='none'){
     populateSetorSelect();
     renderFertiSetores();
-    loadFertiCurva();
+    // v1.8.2: nao re-renderiza a curva se ha edicao nao-salva (senao o status
+    // que chega a cada 5s apaga o que o usuario esta digitando)
+    if(!fertiCurvaDirty&&fertiEditIdx===null)loadFertiCurva();
   }
   renderTambores(d);
   renderDosado(d);
@@ -1839,6 +1842,7 @@ function addFertiCurva(){
   });
   _limpaForm();
   cancelEditFerti(true);
+  fertiCurvaDirty=sid; // v1.8.2: curva modificada, ainda nao salva
   loadFertiCurva();
 }
 
@@ -1864,6 +1868,7 @@ function cancelEditFerti(silent){
 function removeFertiCurva(sid,idx){
   (fertiCurvas[sid]||[]).splice(idx,1);
   if(fertiEditIdx===idx)cancelEditFerti(true);
+  fertiCurvaDirty=sid; // v1.8.2
   loadFertiCurva();
 }
 
@@ -1878,8 +1883,10 @@ function saveFertiCurva(){
       ec:          parseFloat(it.ec)||0
     };
   });
-  if(publishFerti({cmd:'salvar_curva',setor:Number(sid),curva:curva}))
+  if(publishFerti({cmd:'salvar_curva',setor:Number(sid),curva:curva})){
+    fertiCurvaDirty=null; // v1.8.2: salvo -> volta a aceitar o status do firmware
     toast('Curva do Setor '+sid+' salva!');
+  }
 }
 
 // ── Copiar / colar curva entre setores ─────────────────────────
@@ -1900,6 +1907,7 @@ function pasteFertiCurva(){
   if(String(fertiClipFrom)===String(sid)){toast('Mesmo setor — sem efeito');return;}
   if(!confirm('Substituir a curva do Setor '+sid+' pela curva copiada do Setor '+fertiClipFrom+'?\nLembre de tocar "Salvar curva" depois.'))return;
   fertiCurvas[sid]=JSON.parse(JSON.stringify(fertiClip));
+  fertiCurvaDirty=sid; // v1.8.2
   cancelEditFerti(true);
   loadFertiCurva();
   toast('Curva colada — confirme tocando em Salvar');
