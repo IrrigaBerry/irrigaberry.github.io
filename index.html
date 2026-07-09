@@ -151,7 +151,7 @@ select.cfg-input{cursor:pointer}
 
 <div class="header">
   <div>
-    <div class="header-title">🌱 <span id="hdr-cliente">Irrigação</span> <span class="version-tag">v1.8.2</span></div>
+    <div class="header-title">🌱 <span id="hdr-cliente">Irrigação</span> <span class="version-tag">v1.8.3</span></div>
     <div class="header-sub" id="rtc-display">Morango semi-hidropônico</div>
   </div>
   <div class="conn-dot" id="conn-dot"></div>
@@ -283,6 +283,34 @@ select.cfg-input{cursor:pointer}
       </div>
     </div>
 
+    <!-- Calibração do sensor de EC — wizard 2 pontos (envia calibrar_ec) -->
+    <div class="card">
+      <div class="card-title">Calibração do sensor de EC</div>
+      <div id="calib-fechado">
+        <div style="font-size:12px;color:var(--muted);line-height:1.6">Calibração em 2 pontos, dentro da faixa do sensor (0–2000 µS/cm):<br>① <b>Zero</b> — sonda no ar ou água destilada (0 mS/cm).<br>② <b>Solução padrão</b> 1.41 mS/cm (1413 µS).<br>Enxágue e deixe a leitura estabilizar antes de capturar cada ponto.</div>
+        <button class="btn-add" style="width:100%;padding:9px;margin-top:10px" onclick="abrirCalibEC()">🧪 Calibrar sensor EC</button>
+      </div>
+      <div id="calib-aberto" style="display:none">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:12px">
+          <span>ADC cru: <b id="calib-raw" style="font-family:var(--mono);color:var(--text)">—</b></span>
+          <span>EC atual: <b id="calib-ec" style="font-family:var(--mono);color:var(--text)">—</b> mS/cm</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0">
+          <span id="calib-lo-st" style="width:22px;text-align:center;font-size:15px">①</span>
+          <span style="flex:1;font-size:12px;color:var(--muted)">Zero — sonda no ar ou água destilada</span>
+          <button class="btn-on" onclick="capturarZero()">Capturar zero</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0">
+          <span id="calib-hi-st" style="width:22px;text-align:center;font-size:15px">②</span>
+          <input type="number" step="0.01" min="0" id="calib-hi-ec" placeholder="1.41" style="flex:1;padding:7px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono)">
+          <span style="color:var(--muted);font-size:12px">mS/cm</span>
+          <button class="btn-on" onclick="capturarCalib('hi')">Capturar</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5">Capture os 2 pontos — a calibração aplica sozinha ao capturar o segundo. Ponto baixo e alto podem ser em qualquer ordem.</div>
+        <button class="btn-add" style="width:100%;padding:8px;margin-top:8px" onclick="cancelarCalibEC()">Cancelar</button>
+      </div>
+    </div>
+
     <!-- v1.6: Tambores — nível, alarme 10%/5% e botão "reabasteci" -->
     <div class="card">
       <div class="card-title">Tambores (estoque)</div>
@@ -337,6 +365,13 @@ select.cfg-input{cursor:pointer}
       <div class="sector-row"><span class="sector-name">Par A</span><button class="btn-on" onclick="fertiManual('A','on')">Ligar</button><button class="btn-off" onclick="fertiManual('A','off')">Desligar</button></div>
       <div class="sector-row"><span class="sector-name">Par B</span><button class="btn-on" onclick="fertiManual('B','on')">Ligar</button><button class="btn-off" onclick="fertiManual('B','off')">Desligar</button></div>
       <div class="sector-row" style="border-bottom:none"><span class="sector-name">Par C</span><button class="btn-on" onclick="fertiManual('C','on')">Ligar</button><button class="btn-off" onclick="fertiManual('C','off')">Desligar</button></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Purga de ar</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5">Liga as 2 bombas do par pra tirar o ar das linhas depois de trocar os tambores. Desliga sozinho após o tempo de segurança. Aparece "PURGA DE AR" no LCD.</div>
+      <div class="sector-row"><span class="sector-name">Par A</span><button class="btn-on" onclick="purgaAr('A',true)">💨 Purgar</button><button class="btn-off" onclick="purgaAr('A',false)">Parar</button></div>
+      <div class="sector-row"><span class="sector-name">Par B</span><button class="btn-on" onclick="purgaAr('B',true)">💨 Purgar</button><button class="btn-off" onclick="purgaAr('B',false)">Parar</button></div>
+      <div class="sector-row" style="border-bottom:none"><span class="sector-name">Par C</span><button class="btn-on" onclick="purgaAr('C',true)">💨 Purgar</button><button class="btn-off" onclick="purgaAr('C',false)">Parar</button></div>
     </div>
   </div>
 
@@ -1627,6 +1662,15 @@ function renderFertiStatus(){
     // que chega a cada 5s apaga o que o usuario esta digitando)
     if(!fertiCurvaDirty&&fertiEditIdx===null)loadFertiCurva();
   }
+  // Wizard de calibração de EC: leitura crua + EC ao vivo + pontos capturados
+  var cr=document.getElementById('calib-raw');
+  if(cr)cr.textContent=(d.ec_adc_raw===undefined||d.ec_adc_raw===null)?'—':d.ec_adc_raw;
+  var ce=document.getElementById('calib-ec');
+  if(ce)ce.textContent=(d.ec_atual===undefined||d.ec_atual===null)?'—':(parseFloat(d.ec_atual)/1000).toFixed(2);
+  var pend=d.ec_cal_pend||[];
+  var loSt=document.getElementById('calib-lo-st'),hiSt=document.getElementById('calib-hi-st');
+  if(loSt)loSt.textContent=pend.indexOf('lo')>=0?'✅':'①';
+  if(hiSt)hiSt.textContent=pend.indexOf('hi')>=0?'✅':'②';
   renderTambores(d);
   renderDosado(d);
 }
@@ -1659,6 +1703,7 @@ function renderTambores(d){
   var tb=(d&&d.tambores)||{};
   tamboresAtual=tb;
   var alarmes=(d&&d.tambor_alarme)||{};
+  var prev=(d&&d.previsao_tambor_dias)||{}; // dias restantes estimados por bomba
   var alguma=BOMBA_ORDEM.some(function(k){return tb[k]&&tb[k].capacidade_l>0;});
   if(!alguma){el.innerHTML='<div style="color:var(--muted);font-size:13px">Nenhum tambor configurado ainda</div>';return;}
   el.innerHTML=BOMBA_ORDEM.map(function(k){
@@ -1669,10 +1714,17 @@ function renderTambores(d){
     var nv=alarmes[k]||null; // 10 ou 5 quando crítico
     var cor=nv===5?'var(--red)':nv===10?'var(--amber)':'var(--green)';
     var emoji=nv===5?'🚨':nv===10?'⚠️':'🟢';
+    var dias=prev[k];
+    var prevTxt='';
+    if(dias!==undefined&&dias!==null){
+      var dtxt=dias>=10?Math.round(dias):dias.toFixed(1);
+      var dcor=dias<=3?'var(--red)':dias<=7?'var(--amber)':'var(--muted)';
+      prevTxt=' · <span style="color:'+dcor+';font-weight:700">~'+dtxt+'d</span>';
+    }
     return '<div style="padding:11px 0;border-bottom:1px solid var(--border)">'
       +'<div style="display:flex;align-items:center;gap:8px">'
         +'<div style="font-family:var(--mono);font-weight:800;font-size:14px;width:30px">'+k+'</div>'
-        +'<div style="flex:1;font-size:12px;color:var(--muted)">'+emoji+' '+rest.toFixed(1)+' / '+cap+' L · '+pct.toFixed(0)+'%</div>'
+        +'<div style="flex:1;font-size:12px;color:var(--muted)">'+emoji+' '+rest.toFixed(1)+' / '+cap+' L · '+pct.toFixed(0)+'%'+prevTxt+'</div>'
         +'<button class="btn-on" onclick="tamborCheio(\''+k+'\','+cap+')">Reabasteci</button>'
       +'</div>'
       +'<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:7px">'
@@ -1722,6 +1774,34 @@ function salvarTambores(){
   });
   document.getElementById('tambores-config').style.display='none';
   toast(enviados?('🛢 '+enviados+' tambor(es) atualizado(s)'):'Nada mudou');
+}
+
+// Wizard de calibração de EC (2 pontos, dentro da faixa 0–2000 µS do CCT):
+// ① zero (ar/água destilada = 0) + ② solução padrão 1.41 mS/cm. O usuário
+// informa o EC em mS/cm; convertemos p/ µS/cm (×1000, unidade do firmware).
+// Captura o ADC filtrado atual via {cmd:'calibrar_ec',ponto,ec_uscm}.
+function abrirCalibEC(){
+  document.getElementById('calib-fechado').style.display='none';
+  document.getElementById('calib-aberto').style.display='';
+}
+function cancelarCalibEC(){
+  publishFerti({cmd:'calibrar_ec',cancelar:true});
+  document.getElementById('calib-aberto').style.display='none';
+  document.getElementById('calib-fechado').style.display='';
+}
+function capturarCalib(ponto){
+  var inp=document.getElementById('calib-'+ponto+'-ec');
+  var v=parseFloat(inp.value);
+  if(isNaN(v)||v<0){toast('Informe o EC (mS/cm) — 0 no ponto do ar/destilada');return;}
+  var uscm=Math.round(v*1000); // mS/cm -> µS/cm
+  if(publishFerti({cmd:'calibrar_ec',ponto:ponto,ec_uscm:uscm}))
+    toast('🧪 Ponto '+(ponto==='lo'?'baixo':'alto')+' capturado');
+}
+// Ponto zero dedicado (à prova de erro): captura ADC com a sonda no ar/água
+// destilada = 0 µS. Sem campo pra digitar — evita o cliente pôr valor errado.
+function capturarZero(){
+  if(publishFerti({cmd:'calibrar_ec',ponto:'lo',ec_uscm:0}))
+    toast('🧪 Zero capturado (ar/destilada)');
 }
 
 // v1.7: curvas vivem em `fertigacao/status` (campo `setores`, ja com
@@ -1914,6 +1994,7 @@ function pasteFertiCurva(){
 }
 
 function fertiManual(par,action){if(publishFerti({cmd:'ferti_manual',par:par,action:action}))toast('Par '+par+' '+(action==='on'?'ligado':'desligado'));}
+function purgaAr(par,on){if(publishFerti({cmd:'purga',par:par,on:on}))toast(on?('💨 Purgando ar — par '+par):('Purga par '+par+' parada'));}
 
 init();
 </script>
