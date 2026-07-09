@@ -151,7 +151,7 @@ select.cfg-input{cursor:pointer}
 
 <div class="header">
   <div>
-    <div class="header-title">🌱 <span id="hdr-cliente">Irrigação</span> <span class="version-tag">v1.8.3</span></div>
+    <div class="header-title">🌱 <span id="hdr-cliente">Irrigação</span> <span class="version-tag">v1.8.4</span></div>
     <div class="header-sub" id="rtc-display">Morango semi-hidropônico</div>
   </div>
   <div class="conn-dot" id="conn-dot"></div>
@@ -359,12 +359,6 @@ select.cfg-input{cursor:pointer}
         <button class="btn-on" id="ferti-paste-btn" onclick="pasteFertiCurva()" disabled title="Cola no setor atual a curva copiada (substitui)">📥 Colar</button>
       </div>
       <div id="ferti-clip-info" style="font-size:11px;color:var(--muted);margin-top:6px"></div>
-    </div>
-    <div class="card">
-      <div class="card-title">Controle manual</div>
-      <div class="sector-row"><span class="sector-name">Par A</span><button class="btn-on" onclick="fertiManual('A','on')">Ligar</button><button class="btn-off" onclick="fertiManual('A','off')">Desligar</button></div>
-      <div class="sector-row"><span class="sector-name">Par B</span><button class="btn-on" onclick="fertiManual('B','on')">Ligar</button><button class="btn-off" onclick="fertiManual('B','off')">Desligar</button></div>
-      <div class="sector-row" style="border-bottom:none"><span class="sector-name">Par C</span><button class="btn-on" onclick="fertiManual('C','on')">Ligar</button><button class="btn-off" onclick="fertiManual('C','off')">Desligar</button></div>
     </div>
     <div class="card">
       <div class="card-title">Purga de ar</div>
@@ -1993,7 +1987,6 @@ function pasteFertiCurva(){
   toast('Curva colada — confirme tocando em Salvar');
 }
 
-function fertiManual(par,action){if(publishFerti({cmd:'ferti_manual',par:par,action:action}))toast('Par '+par+' '+(action==='on'?'ligado':'desligado'));}
 function purgaAr(par,on){if(publishFerti({cmd:'purga',par:par,on:on}))toast(on?('💨 Purgando ar — par '+par):('Purga par '+par+' parada'));}
 
 init();
