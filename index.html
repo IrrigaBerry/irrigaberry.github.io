@@ -144,14 +144,13 @@ select.cfg-input{cursor:pointer}
 .ec-arrow{color:var(--muted);font-size:12px}
 .ec-val{font-size:13px;font-weight:700;color:var(--green);flex:1;text-align:right;font-family:var(--mono)}
 
-.version-tag{font-size:9px;color:var(--muted);font-family:var(--mono);background:var(--surface2);padding:2px 6px;border-radius:6px;margin-left:6px}
 </style>
 </head>
 <body>
 
 <div class="header">
   <div>
-    <div class="header-title">🌱 <span id="hdr-cliente">Irrigação</span> <span class="version-tag">v1.8.4</span></div>
+    <div class="header-title">🌱 <span id="hdr-cliente">Irrigação</span></div>
     <div class="header-sub" id="rtc-display">Morango semi-hidropônico</div>
   </div>
   <div class="conn-dot" id="conn-dot"></div>
@@ -211,26 +210,14 @@ select.cfg-input{cursor:pointer}
     <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px;line-height:1.5">Toque no setor para expandir e editar<br>Toggle liga/desliga a programação imediatamente</div>
   </div>
 
-  <!-- v1.5: aba Sensores — estação meteorológica + nós de substrato (Fase 1: só observação) -->
+  <!-- aba Sensores — nós de substrato (umidade + EC). Fase 1: só observação -->
   <div id="tab-sensores" style="display:none">
-    <div class="card" id="card-meteo">
-      <div class="card-title">Estação meteorológica <span class="badge badge-muted" id="meteo-online" style="float:right">—</span></div>
-      <div class="sens-grid" id="meteo-grid"></div>
-      <div id="meteo-previsao" style="font-size:12px;color:var(--blue);font-weight:700;margin-top:10px;display:none"></div>
-      <div id="meteo-alerta" style="margin-top:10px;display:none"></div>
-    </div>
-    <!-- Horas de frio (morango) — acumulado pelo serviço frio_morango.py no Pi -->
-    <div class="card" id="card-frio">
-      <div class="card-title">❄ Horas de frio — morango <span class="badge badge-muted" id="frio-badge" style="float:right">—</span></div>
-      <div id="frio-content"><div style="color:var(--muted);font-size:13px">Aguardando dados de frio do Pi...</div></div>
-      <div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5">Horas com temperatura ≤ <span id="frio-limiar">7,2</span> °C acumuladas na temporada. Quebra a dormência e garante brotação/frutificação uniformes.</div>
-    </div>
     <div class="card" id="card-substrato">
       <div class="card-title">Substrato (nós LoRa)</div>
       <div id="substrato-list"><div style="color:var(--muted);font-size:13px">Nenhum nó de substrato reportando ainda</div></div>
     </div>
     <div class="info-box">
-      <strong>Fase 1 — observação.</strong> Os sensores são apenas informativos: não interferem na irrigação. Sensores ausentes aparecem como "—" (pluviômetro, anemômetro e pH serão instalados futuramente).
+      <strong>Fase 1 — observação.</strong> Os sensores de umidade e EC do substrato são apenas informativos: não interferem na irrigação. Sensores ausentes aparecem como "—".
     </div>
   </div>
 
@@ -311,21 +298,6 @@ select.cfg-input{cursor:pointer}
       </div>
     </div>
 
-    <!-- v1.6: Tambores — nível, alarme 10%/5% e botão "reabasteci" -->
-    <div class="card">
-      <div class="card-title">Tambores (estoque)</div>
-      <div id="tambores-list"><div style="color:var(--muted);font-size:13px">Aguardando dados da injetora...</div></div>
-      <button class="btn-add" style="width:100%;padding:9px;margin-top:8px" onclick="abrirConfigTambores()">⚙ Configurar capacidades</button>
-      <div id="tambores-config" style="display:none;margin-top:10px"></div>
-      <div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5">A injetora subtrai o volume dosado via sensor de fluxo. Toque em "Reabasteci" depois de trocar o tambor — isso zera o alarme. Use "Configurar capacidades" pra ajustar o tamanho dos tambores deste kit (0 = bomba sem tambor).</div>
-    </div>
-
-    <!-- Dosado hoje: volume por bomba (nao somado) -->
-    <div class="card">
-      <div class="card-title">Dosado hoje (por bomba)</div>
-      <div id="dosado-list"><div style="color:var(--muted);font-size:13px">Aguardando dados da injetora...</div></div>
-    </div>
-
     <div class="card"><div class="card-title">Par por setor</div><div id="ferti-setor-config"><div style="color:var(--muted);font-size:13px">Aguardando setores...</div></div></div>
     <!-- v1.7: curva agora eh POR SETOR (antes era por par). Permite mesma
          receita rodar em setores com EC alvo distinto. Add: editar/copiar/colar. -->
@@ -393,7 +365,7 @@ select.cfg-input{cursor:pointer}
     <div class="card">
       <div class="card-title">Sistema / OTA</div>
       <div id="sys-list"><div style="color:var(--muted);font-size:13px">Aguardando dados...</div></div>
-      <div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5">O controlador recusa OTA enquanto irriga. Estação: requer ACL liberando publicação em esp32_estacao01/meteo/comando para o usuário webapp.</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5">O controlador recusa OTA enquanto irriga.</div>
     </div>
     <div class="card">
       <div class="card-title">✅ Conexão pública</div>
@@ -427,7 +399,6 @@ select.cfg-input{cursor:pointer}
         esp32_lavoura01/irrigation/history/clear<br>
         esp32_lavoura01/substratoNN/leitura <span style="color:var(--green)">(retain)</span><br>
         esp32_lavoura01/substratoNN/online <span style="color:var(--green)">(retain)</span><br>
-        esp32_estacao01/meteo/# <span style="color:var(--green)">(retain)</span><br>
         fertigacao/status <span style="color:var(--green)">(retain)</span><br>
         fertigacao/command · fertigacao/online <span style="color:var(--green)">(retain · LWT)</span><br>
         fertigacao/curvas <span style="color:var(--green)">(retain · v1.5)</span>
@@ -489,9 +460,9 @@ select.cfg-input{cursor:pointer}
 
 <script>
 var T='esp32_lavoura01';
-var recEstacao=false,recSubstrato=false; // v1.8: recursos opcionais por kit (flags no link)
+var recSubstrato=false; // v1.8: recursos opcionais por kit (flags no link)
 var client=null;
-var mqttUser='webapp'; // usuário MQTT conectado (pra montar <user>/frio_comando)
+var mqttUser='webapp'; // usuário MQTT conectado
 var state={sectors:[],pump:false,current_sector:null,datetime:''};
 var cfgSchedules={},cfgEnabled={},cfgExpanded={};
 // v1.7 (2026-06-13): curva agora vive POR SETOR (antes era por par).
@@ -513,8 +484,6 @@ var mzSelected={};
 var espOnline=null,lastStatusTs=null,lastStatusDatetime='';
 var telemetria=null;
 var fertiOnline=null;
-var meteoData={},meteoStatus=null,meteoAlerta=null;
-var frioData=null; // {limiar_c,meta_h,seed_h,total_h,dias:[{d,h}],atualizado}
 var substratos={};
 // v1.5: ACK de set_sector — firmware republica o schedule após aplicar
 var pendingAcks={};
@@ -547,7 +516,7 @@ function init(){
   var saved=JSON.parse(localStorage.getItem('mqtt_cfg')||'{}');
   var qs=new URLSearchParams(location.search);
   if(qs.toString()){
-    ['broker','port','user','pass','cliente','estacao','substrato'].forEach(function(k){
+    ['broker','port','user','pass','cliente','substrato'].forEach(function(k){
       var v=qs.get(k); if(v!==null&&v!=='')saved[k]=v;
     });
     localStorage.setItem('mqtt_cfg',JSON.stringify(saved));
@@ -560,7 +529,6 @@ function init(){
   if(saved.user)document.getElementById('inp-user').value=saved.user;
   if(saved.pass)document.getElementById('inp-pass').value=saved.pass;
   renderHistory();
-  renderMeteo();
   // v1.5: só auto-conecta se já tem senha salva (senha não vem mais no HTML)
   if(document.getElementById('inp-broker').value&&document.getElementById('inp-pass').value)connect();
   else if(!saved.pass)toast('Informe a senha na aba Conexão');
@@ -575,17 +543,14 @@ function aplicaCliente(nome){
 }
 
 // v1.8: mostra/esconde recursos opcionais conforme o kit (flags no link).
-// Kit básico (controlador + injetora) não tem estação meteo nem substrato:
-// esconde a aba Sensores inteira. Ao vender esses add-ons, reemitir o link
-// com estacao=1 / substrato=1 — sem tocar código.
+// Kit básico (controlador + injetora) não tem sensores de substrato:
+// esconde a aba Sensores inteira. Ao vender esse add-on, reemitir o link
+// com substrato=1 — sem tocar código.
 function aplicaRecursos(cfg){
-  recEstacao=String(cfg.estacao)==='1';
   recSubstrato=String(cfg.substrato)==='1';
   var show=function(id,on){var el=document.getElementById(id); if(el)el.style.display=on?'':'none';};
-  show('card-meteo',recEstacao);
-  show('card-frio',recEstacao);      // horas de frio dependem da estação
   show('card-substrato',recSubstrato);
-  show('tab-btn-sensores',recEstacao||recSubstrato); // aba some se não tem nenhum
+  show('tab-btn-sensores',recSubstrato);
 }
 
 function showTab(name,el){
@@ -595,7 +560,7 @@ function showTab(name,el){
   if(name==='config')renderConfigSectors();
   if(name==='manual')renderManualSectors();
   if(name==='historico')renderHistory();
-  if(name==='sensores'){renderMeteo();renderSubstratos();renderFrio();}
+  if(name==='sensores')renderSubstratos();
   if(name==='conn')renderSistema();
   if(name==='ferti'){populateSetorSelect();renderFertiSetores();loadFertiCurva();renderFertiStatus();}
 }
@@ -629,8 +594,6 @@ function connect(){
       client.subscribe(T+'/+/leitura');
       client.subscribe(T+'/+/online');
     }
-    // v1.5: estação meteorológica (valores individuais retained) — só se o kit tem
-    if(recEstacao)client.subscribe('esp32_estacao01/meteo/#');
     client.subscribe('fertigacao/status');
     client.subscribe('fertigacao/online');  // v1.5
     client.subscribe('fertigacao/curvas');  // v1.5: curvas/pares retained
@@ -649,7 +612,6 @@ function connect(){
     // v1.5: tópicos com payload não-JSON primeiro
     if(t===T+'/irrigation/online'){onEspOnline(msg);return;}
     if(t==='fertigacao/online'){onFertiOnline(msg);return;}
-    if(t.indexOf('esp32_estacao01/meteo/')===0){onMeteo(t.slice('esp32_estacao01/meteo/'.length),msg);return;}
     var mSub=t.match(/^esp32_lavoura01\/(substrato\d+)\/(leitura|online)$/);
     if(mSub){onSubstrato(mSub[1],mSub[2],msg);return;}
     try{var d=JSON.parse(msg);
@@ -1335,175 +1297,10 @@ function stopAll(){
 function forcarReconfig(){if(publish({cmd:'reset_wifi'}))toast('Comando enviado! Controlador entrará em modo portal.');}
 
 /* ===================================================================== */
-/*  v1.5 — Aba SENSORES: estação meteorológica + nós de substrato         */
-/*  Regra do projeto: TODO sensor é opcional — ausente mostra "—".        */
-/*  Fase 1: observação apenas, sem nenhuma decisão de irrigação aqui.     */
+/*  Aba SENSORES: nos de substrato (umidade + EC)                         */
+/*  Regra do projeto: TODO sensor eh opcional - ausente mostra "-".       */
+/*  Fase 1: observacao apenas, sem nenhuma decisao de irrigacao aqui.     */
 /* ===================================================================== */
-
-var METEO_ITEMS=[
-  ['temperatura','Temperatura','°C',1],
-  ['umidade','Umidade','%',0],
-  ['vpd','VPD','kPa',2],
-  ['dli_acumulado','DLI hoje','mol/m²',1],
-  ['ppfd','PPFD','µmol/m²s',0],
-  ['lux','Luz','lx',0],
-  ['pressao','Pressão','hPa',1],
-  ['ponto_orvalho','P. orvalho','°C',1],
-  ['pressao_tendencia','Tendência','',null],
-  ['vento_velocidade','Vento','m/s',1],
-  ['vento_direcao','Dir. vento','°',0],
-  ['chuva_mm_dia','Chuva hoje','mm',1]
-];
-
-// condicao = nowcast (lux agora) + previsao por pressao, decidido no firmware.
-// Cai pra 'previsao' crua se a estacao ainda nao publica condicao.
-var CONDICAO_TXT={
-  ensolarado:{icon:'☀️',txt:'Ensolarado'},
-  parcial:{icon:'🌤',txt:'Parcialmente nublado'},
-  nublado:{icon:'☁️',txt:'Nublado'},
-  nevoa:{icon:'🌫️',txt:'Névoa / orvalho'},
-  estavel:{icon:'⛅',txt:'Tempo estável'},
-  tempo_melhorando:{icon:'🌤',txt:'Tempo melhorando'},
-  chuva_provavel:{icon:'🌧️',txt:'Chuva provável (6–12h)'},
-  tempestade_provavel:{icon:'⛈️',txt:'Tempestade provável (3–6h)'},
-  coletando_dados:{icon:'⏳',txt:'Coletando dados (3h)'}
-};
-
-function onMeteo(chave,msg){
-  if(chave==='status'){
-    try{meteoStatus=JSON.parse(msg);}catch(e){}
-  }else if(chave==='alerta'){
-    try{meteoAlerta=JSON.parse(msg);}catch(e){}
-  }else if(chave==='frio_historico'){
-    try{frioData=JSON.parse(msg);}catch(e){}
-    renderFrio();return;
-  }else if(chave==='comando'||chave==='frio_comando'){
-    return; // eco de comando — não é leitura
-  }else{
-    // valor numérico puro vira Number; texto (tendência, previsão) fica string
-    var num=Number(msg);
-    meteoData[chave]=(msg.trim()!==''&&!isNaN(num))?num:msg;
-  }
-  renderMeteo();renderSistema();
-}
-
-function renderMeteo(){
-  var grid=document.getElementById('meteo-grid');if(!grid)return;
-  grid.innerHTML=METEO_ITEMS.map(function(it){
-    var k=it[0],lbl=it[1],unit=it[2],dec=it[3];
-    var v=meteoData[k],txt;
-    if(v===undefined||v===null||v===''){txt='—';}
-    else if(typeof v==='number'&&dec!==null){txt=v.toFixed(dec);}
-    else{txt=escapeHtml(String(v));}
-    return '<div class="sens-item"><div class="sens-lbl">'+lbl+'</div><div class="sens-val">'+txt+(txt!=='—'&&unit?' <span class="sens-unit">'+unit+'</span>':'')+'</div></div>';
-  }).join('');
-  var prev=document.getElementById('meteo-previsao');
-  var cnd=meteoData.condicao||meteoData.previsao;
-  var ci=CONDICAO_TXT[cnd];
-  if(ci){prev.textContent=ci.icon+' '+ci.txt;prev.style.display='';}
-  else if(cnd){prev.textContent='🌤 '+cnd;prev.style.display='';}
-  else prev.style.display='none';
-  var al=document.getElementById('meteo-alerta');
-  if(meteoAlerta&&meteoAlerta.ativo){
-    al.innerHTML='<span class="badge badge-err">⚠ Alerta: '+escapeHtml(meteoAlerta.tipo||'')+'</span>';
-    al.style.display='';
-  }else al.style.display='none';
-  var badge=document.getElementById('meteo-online');
-  if(meteoStatus===null){badge.className='badge badge-muted';badge.textContent='—';}
-  else if(meteoStatus.online===false){badge.className='badge badge-err';badge.textContent='OFFLINE';}
-  else{badge.className='badge badge-ok';badge.textContent='ONLINE';}
-}
-
-/* ===================================================================== */
-/*  Horas de frio (morango) — chart SVG do histórico publicado pelo Pi    */
-/* ===================================================================== */
-function publishFrioCmd(obj){
-  if(!client||!client.connected){toast('⚠ Sem conexão!');return false;}
-  // webapp só pode escrever no próprio prefixo (ACL pattern %u/#); o serviço
-  // frio_morango.py (admin) assina +/frio_comando.
-  client.publish((mqttUser||'webapp')+'/frio_comando',JSON.stringify(obj),{qos:1});
-  return true;
-}
-
-function renderFrio(){
-  var el=document.getElementById('frio-content');if(!el)return;
-  // não re-renderiza enquanto o usuário digita nos ajustes (destruiria o input)
-  var ae=document.activeElement;
-  if(ae&&(ae.id==='frio-seed'||ae.id==='frio-meta'))return;
-  var badge=document.getElementById('frio-badge');
-  var f=frioData;
-  if(!f){if(badge){badge.className='badge badge-muted';badge.textContent='—';}
-    el.innerHTML='<div style="color:var(--muted);font-size:13px">Aguardando dados de frio do Pi...</div>';return;}
-  var lim=document.getElementById('frio-limiar');
-  if(lim&&f.limiar_c!==undefined)lim.textContent=String(f.limiar_c).replace('.',',');
-
-  var total=f.total_h||0, meta=f.meta_h||200;
-  var pct=Math.max(0,Math.min(100,meta>0?total/meta*100:0));
-  var ok=total>=meta;
-  var cor=ok?'var(--green)':'var(--blue)';
-  if(badge){badge.className='badge '+(ok?'badge-ok':'badge-blue');
-    badge.textContent=ok?'meta atingida':Math.round(pct)+'%';}
-
-  // Barra de progresso (acumulado vs meta)
-  var html='<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:6px">'
-    +'<div><span style="font-size:30px;font-weight:800;font-family:var(--mono);color:'+cor+'">'+total.toFixed(1)+'</span>'
-    +'<span style="font-size:13px;color:var(--muted)"> / '+Math.round(meta)+' h</span></div>'
-    +'<div style="font-size:11px;color:var(--muted)">'+(f.seed_h?'inclui '+f.seed_h+'h semeadas':'')+'</div></div>';
-  html+='<div style="height:9px;background:var(--surface2);border-radius:5px;overflow:hidden">'
-    +'<div style="height:100%;width:'+pct+'%;background:'+cor+';transition:width .4s"></div></div>';
-
-  // Chart de barras: horas de frio por dia (últimos N)
-  var dias=(f.dias||[]).slice(-45);
-  if(dias.length){
-    var W=320,H=104,axis=16;
-    var maxH=Math.max(6,Math.max.apply(null,dias.map(function(x){return x.h;})));
-    var n=dias.length, bw=W/n, gap=n>30?0:0.8;
-    var bars='',diasComFrio=0,melhor=0;
-    dias.forEach(function(x,i){
-      if(x.h>0)diasComFrio++;
-      if(x.h>melhor)melhor=x.h;
-      var bh=maxH>0?(x.h/maxH)*(H-axis):0;
-      var xx=(i*bw+gap).toFixed(1), yy=(H-axis-bh).toFixed(1), w=(bw-gap*2).toFixed(1);
-      var c=x.h>0?'var(--blue)':'var(--border)';
-      bars+='<rect x="'+xx+'" y="'+yy+'" width="'+w+'" height="'+Math.max(0.5,bh).toFixed(1)+'" fill="'+c+'" rx="1"><title>'+x.d+': '+x.h.toFixed(1)+' h</title></rect>';
-    });
-    // linha de base
-    bars+='<line x1="0" y1="'+(H-axis)+'" x2="'+W+'" y2="'+(H-axis)+'" stroke="var(--border)" stroke-width="1"/>';
-    var d0=dias[0].d.slice(8)+'/'+dias[0].d.slice(5,7);
-    var d1=dias[dias.length-1].d.slice(8)+'/'+dias[dias.length-1].d.slice(5,7);
-    html+='<div style="font-size:10px;color:var(--muted);margin-top:12px;display:flex;justify-content:space-between">'
-      +'<span>Frio por dia (h) · pico '+melhor.toFixed(1)+'h · '+diasComFrio+'/'+dias.length+' dias</span><span>máx '+maxH.toFixed(0)+'h</span></div>';
-    html+='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block;margin-top:4px" preserveAspectRatio="none">'+bars+'</svg>';
-    html+='<div style="font-size:10px;color:var(--muted);display:flex;justify-content:space-between"><span>'+d0+'</span><span>'+d1+'</span></div>';
-  }else{
-    html+='<div style="font-size:12px;color:var(--muted);margin-top:12px">Nenhum dia com frio registrado ainda nesta temporada.</div>';
-  }
-
-  // Controles: semear frio já acumulado + ajustar meta
-  html+='<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">'
-    +'<div style="font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:700;letter-spacing:.5px;margin-bottom:6px">Ajustes</div>'
-    +'<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
-    +'<input class="sched-input" id="frio-seed" type="number" step="1" min="0" placeholder="frio já acumulado (h)" value="'+(f.seed_h||'')+'" style="flex:1;min-width:120px">'
-    +'<button class="btn-on" onclick="salvarFrioSeed()">Semear</button></div>'
-    +'<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px">'
-    +'<input class="sched-input" id="frio-meta" type="number" step="10" min="1" placeholder="meta (h)" value="'+Math.round(meta)+'" style="flex:1;min-width:120px">'
-    +'<button class="btn-on" onclick="salvarFrioMeta()">Salvar meta</button></div>'
-    +'<div style="font-size:10px;color:var(--muted);margin-top:6px">A estação entrou em campo no meio do inverno — "semear" lança o frio estimado que passou antes do registro começar.</div>'
-    +(f.atualizado?'<div style="font-size:10px;color:var(--muted);margin-top:4px">atualizado '+escapeHtml(f.atualizado)+'</div>':'')
-    +'</div>';
-  el.innerHTML=html;
-}
-
-function salvarFrioSeed(){
-  var v=parseFloat(document.getElementById('frio-seed').value);
-  if(isNaN(v)||v<0){toast('Valor inválido');return;}
-  if(publishFrioCmd({seed_h:v}))toast('❄ Frio semeado: '+v+' h');
-}
-function salvarFrioMeta(){
-  var v=parseFloat(document.getElementById('frio-meta').value);
-  if(isNaN(v)||v<1){toast('Meta inválida');return;}
-  if(publishFrioCmd({meta_h:v}))toast('❄ Meta: '+v+' h');
-}
 
 // MicroPython usa epoch 2000 — converte pra unix quando necessário
 function tsUnix(ts){if(!ts)return null;return ts<1000000000?ts+946684800:ts;}
@@ -1572,12 +1369,6 @@ function renderSistema(){
     +' · up '+fmtUptime(tm.uptime_s)
     +(tm.heap_livre?'<br>heap '+Math.round(tm.heap_livre/1024)+'KB · reset: '+escapeHtml(tm.reset_cause||'—'):'')+'</div></div>'
     +'<button class="btn-add" onclick="otaControlador()">⬆ OTA</button></div>');
-  // Estação
-  var ms=meteoStatus||{};
-  rows.push('<div class="sys-row"><div class="dot '+(meteoStatus===null?'dot-idle':ms.online===false?'dot-off':'dot-active')+'" style="margin-top:5px"></div>'
-    +'<div class="sys-info"><div class="sys-name">Estação meteo (esp32_estacao01)</div>'
-    +'<div class="sys-meta">📶 '+(ms.rssi!==undefined?ms.rssi+'dBm':'—')+' · up '+fmtUptime(ms.uptime)+'</div></div>'
-    +'<button class="btn-add" onclick="otaEstacao()">⬆ OTA</button></div>');
   // Injetora
   rows.push('<div class="sys-row"><div class="dot '+(fertiOnline==='1'?'dot-active':fertiOnline==='0'?'dot-off':'dot-idle')+'" style="margin-top:5px"></div>'
     +'<div class="sys-info"><div class="sys-name">Injetora ferti (fertigacao)</div>'
@@ -1590,13 +1381,6 @@ function otaControlador(){
   if(state.pump){toast('⚠ Controlador irrigando — aguarde o fim para OTA');return;}
   if(!confirm('Atualizar firmware do CONTROLADOR via OTA?\n\nO controlador baixa do servidor no Pi e reinicia.'))return;
   if(publish({cmd:'ota_update'}))toast('⬆ OTA solicitado ao controlador');
-}
-function otaEstacao(){
-  if(!client||!client.connected){toast('⚠ Sem conexão!');return;}
-  if(!confirm('Atualizar firmware da ESTAÇÃO via OTA?'))return;
-  // Estação recebe comando como string pura (não JSON)
-  client.publish('esp32_estacao01/meteo/comando','ota_update',{qos:1});
-  toast('⬆ OTA solicitado à estação');
 }
 function otaInjetora(){
   if(!confirm('Atualizar firmware da INJETORA via OTA?'))return;
@@ -1665,109 +1449,6 @@ function renderFertiStatus(){
   var loSt=document.getElementById('calib-lo-st'),hiSt=document.getElementById('calib-hi-st');
   if(loSt)loSt.textContent=pend.indexOf('lo')>=0?'✅':'①';
   if(hiSt)hiSt.textContent=pend.indexOf('hi')>=0?'✅':'②';
-  renderTambores(d);
-  renderDosado(d);
-}
-
-// Dosado hoje por bomba (mL -> L). Fonte: fertigacao/status.dosado_dia_ml
-function renderDosado(d){
-  var el=document.getElementById('dosado-list');
-  if(!el)return;
-  var dosado=(d&&d.dosado_dia_ml)||{};
-  var bombas=['A1','A2','B1','B2','C1','C2'];
-  el.innerHTML=bombas.map(function(b){
-    var ml=parseFloat(dosado[b]||0);
-    var cor=ml>0?'var(--text)':'var(--muted)';
-    return '<div style="display:flex;justify-content:space-between;padding:4px 2px;border-bottom:1px solid var(--border)">'
-      +'<span style="color:var(--muted)">Bomba '+b+'</span>'
-      +'<b style="color:'+cor+'">'+(ml/1000).toFixed(2)+' L</b></div>';
-  }).join('');
-}
-
-/* ===================================================================== */
-/*  v1.6 — Tambores: nível por bomba + 2 níveis de alarme (10%/5%)        */
-/*  Dados vêm do fertigacao/status: tambores{bomba:{capacidade_l,         */
-/*  restante_l}}, tambor_alarme{bomba:nivel_pct}.                         */
-/*  Comando "Reabasteci" = MQTT {"cmd":"tambor_cheio","bomba":"X","litros":N}*/
-/* ===================================================================== */
-var BOMBA_ORDEM=['A1','A2','B1','B2','C1','C2'];
-var tamboresAtual={}; // v1.8: ultimas capacidades vistas (pra pre-preencher a config)
-function renderTambores(d){
-  var el=document.getElementById('tambores-list');if(!el)return;
-  var tb=(d&&d.tambores)||{};
-  tamboresAtual=tb;
-  var alarmes=(d&&d.tambor_alarme)||{};
-  var prev=(d&&d.previsao_tambor_dias)||{}; // dias restantes estimados por bomba
-  var alguma=BOMBA_ORDEM.some(function(k){return tb[k]&&tb[k].capacidade_l>0;});
-  if(!alguma){el.innerHTML='<div style="color:var(--muted);font-size:13px">Nenhum tambor configurado ainda</div>';return;}
-  el.innerHTML=BOMBA_ORDEM.map(function(k){
-    var t=tb[k]||{capacidade_l:0,restante_l:0};
-    var cap=t.capacidade_l||0,rest=t.restante_l||0;
-    if(cap<=0)return ''; // bomba sem tambor cadastrado
-    var pct=cap>0?Math.max(0,Math.min(100,rest/cap*100)):0;
-    var nv=alarmes[k]||null; // 10 ou 5 quando crítico
-    var cor=nv===5?'var(--red)':nv===10?'var(--amber)':'var(--green)';
-    var emoji=nv===5?'🚨':nv===10?'⚠️':'🟢';
-    var dias=prev[k];
-    var prevTxt='';
-    if(dias!==undefined&&dias!==null){
-      var dtxt=dias>=10?Math.round(dias):dias.toFixed(1);
-      var dcor=dias<=3?'var(--red)':dias<=7?'var(--amber)':'var(--muted)';
-      prevTxt=' · <span style="color:'+dcor+';font-weight:700">~'+dtxt+'d</span>';
-    }
-    return '<div style="padding:11px 0;border-bottom:1px solid var(--border)">'
-      +'<div style="display:flex;align-items:center;gap:8px">'
-        +'<div style="font-family:var(--mono);font-weight:800;font-size:14px;width:30px">'+k+'</div>'
-        +'<div style="flex:1;font-size:12px;color:var(--muted)">'+emoji+' '+rest.toFixed(1)+' / '+cap+' L · '+pct.toFixed(0)+'%'+prevTxt+'</div>'
-        +'<button class="btn-on" onclick="tamborCheio(\''+k+'\','+cap+')">Reabasteci</button>'
-      +'</div>'
-      +'<div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:7px">'
-        +'<div style="height:100%;width:'+pct+'%;background:'+cor+';transition:width .3s"></div>'
-      +'</div>'
-      +(nv?'<div style="font-size:10px;color:'+cor+';font-weight:700;margin-top:5px">ALARME — abaixo de '+nv+'% da capacidade</div>':'')
-      +'</div>';
-  }).filter(function(x){return x;}).join('');
-}
-
-function tamborCheio(bomba,capacidade){
-  var litros=prompt('Quantos litros foram colocados no tambor '+bomba+'?\n(deixe vazio pra usar a capacidade nominal: '+capacidade+' L)','');
-  if(litros===null)return;
-  litros=litros.trim();
-  var payload={cmd:'tambor_cheio',bomba:bomba};
-  if(litros!==''){var n=parseFloat(litros);if(isNaN(n)||n<=0){toast('Valor inválido');return;}payload.litros=n;}
-  if(publishFerti(payload))toast('🛢 Tambor '+bomba+(litros?' = '+litros+' L':' (capacidade nominal)'));
-}
-
-// v1.8: configura a CAPACIDADE (litragem) de cada tambor — cada kit tem
-// tambores diferentes. Envia {cmd:'set_tambor',bomba,capacidade_l} (0 = sem
-// tambor). O firmware assume cheio ao configurar (restante = capacidade).
-function abrirConfigTambores(){
-  var el=document.getElementById('tambores-config');
-  if(el.style.display!=='none'){el.style.display='none';return;} // toggle
-  el.innerHTML=BOMBA_ORDEM.map(function(k){
-    var cap=(tamboresAtual[k]&&tamboresAtual[k].capacidade_l)||0;
-    return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0">'
-      +'<span style="font-family:var(--mono);font-weight:800;width:30px">'+k+'</span>'
-      +'<input type="number" min="0" step="1" id="capin-'+k+'" value="'+cap+'" '
-      +'style="flex:1;padding:7px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono)">'
-      +'<span style="color:var(--muted);font-size:12px">L</span></div>';
-  }).join('')
-  +'<button class="save-btn" style="margin-top:8px" onclick="salvarTambores()">Salvar capacidades</button>';
-  el.style.display='';
-}
-
-function salvarTambores(){
-  var enviados=0;
-  BOMBA_ORDEM.forEach(function(k){
-    var inp=document.getElementById('capin-'+k);if(!inp)return;
-    var v=parseFloat(inp.value);
-    if(isNaN(v)||v<0)return;
-    var atual=(tamboresAtual[k]&&tamboresAtual[k].capacidade_l)||0;
-    if(v===atual)return; // nao mudou — nao reenvia (evita zerar nivel a toa)
-    if(publishFerti({cmd:'set_tambor',bomba:k,capacidade_l:v}))enviados++;
-  });
-  document.getElementById('tambores-config').style.display='none';
-  toast(enviados?('🛢 '+enviados+' tambor(es) atualizado(s)'):'Nada mudou');
 }
 
 // Wizard de calibração de EC (2 pontos, dentro da faixa 0–2000 µS do CCT):
