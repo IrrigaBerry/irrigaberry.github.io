@@ -804,15 +804,16 @@ function tickUI(){
 /* ── Histórico (v1.4: vem do Pi; v1.5: + resumo estatístico) ── */
 function onHistory(data){
   var list=Array.isArray(data)?data:(data.h||[]);
-  // e = EC media do pulso em uS/cm (o Pi acumula fertigacao/status.ec_atual
-  // enquanto o setor esta aberto). Ausente em pulso sem injetora.
-  irrigHistory=list.map(function(e){return {sector:e.s,dur:e.d,ts:e.t,ec:(typeof e.e==='number'?e.e:null)};});
+  // a = EC alvo da faixa horaria da curva em que o pulso comecou (uS/cm).
+  // Ausente quando o pulso rodou sem injetora ou com a ferti desligada.
+  // (o Pi tambem grava 'e' = media lida, so pra diagnostico — nao usado aqui)
+  irrigHistory=list.map(function(e){return {sector:e.s,dur:e.d,ts:e.t,ec:(typeof e.a==='number'?e.a:null)};});
   renderHistory();
 }
-// EC media do pulso: vem em uS/cm do Pi, mostra em mS/cm (unidade do produtor).
+// EC alvo da faixa horaria: vem em uS/cm do Pi, mostra em mS/cm (unidade do produtor).
 function fmtEc(uscm){
   if(uscm===null||uscm===undefined||isNaN(uscm))return '<span style="color:var(--muted)">EC —</span>';
-  return 'EC '+(uscm/1000).toFixed(2);
+  return 'EC '+(uscm/1000).toFixed(2)+' alvo';
 }
 function fmtDur(sec){
   var m=Math.floor(sec/60),s=sec%60;
@@ -842,8 +843,8 @@ function renderHistStats(){
     if(p.length!==3)return;
     if(dpart===hoje){
       tHoje+=h.dur;nHoje++;porSetor[h.sector]=(porSetor[h.sector]||0)+h.dur;
-      // EC media do dia: media dos pulsos que tem leitura (ponderada por duracao,
-      // senao um pulso de 1min pesa igual a um de 40min)
+      // EC alvo medio do dia: media dos alvos das faixas que rodaram, ponderada
+      // por duracao (senao um pulso de 1min pesa igual a um de 40min)
       if(h.ec!==null&&h.ec!==undefined){ecSoma+=h.ec*h.dur;ecN+=h.dur;}
     }
     var dt=new Date(parseInt(p[2]),parseInt(p[1])-1,parseInt(p[0]));
@@ -851,7 +852,7 @@ function renderHistStats(){
   });
   var chips=Object.keys(porSetor).sort().map(function(k){return '<span class="badge badge-blue">S'+k+' '+fmtDur(porSetor[k])+'</span>';}).join(' ');
   el.innerHTML='Hoje: <b style="color:var(--text)">'+nHoje+'</b> irrigações · <b style="color:var(--green)">'+fmtDur(tHoje)+'</b>'
-    +(ecN?' · EC média <b style="color:var(--blue)">'+(ecSoma/ecN/1000).toFixed(2)+'</b> mS/cm':'')+'<br>'
+    +(ecN?' · EC alvo médio <b style="color:var(--blue)">'+(ecSoma/ecN/1000).toFixed(2)+'</b> mS/cm':'')+'<br>'
     +(chips?chips+'<br>':'')
     +'Últimos 7 dias: <b style="color:var(--text)">'+fmtDur(t7)+'</b>'
     +'<br><span style="font-size:10px">(sobre os últimos registros publicados pelo Pi)</span>';
