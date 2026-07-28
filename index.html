@@ -268,6 +268,19 @@ select.cfg-input{cursor:pointer}
         </label>
         <span style="font-size:11px;color:var(--muted)">desligue pra irrigar sem dosar adubo</span>
       </div>
+
+      <!-- Trim manual de PWM por bomba. pwm_bomba = nominal adaptativo do EC +
+           trim fixo. Ajuste quando uma bomba do par injeta menos que a outra. -->
+      <div id="pwm-trim-box" style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:3px">🎛 Trim manual de PWM por bomba (%)</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Somado FIXO ao PWM que o EC ajusta sozinho. Ex: bomba puxando menos que a parceira → +2%. O EC segue ajustando as duas juntas; a diferença fica fixa.</div>
+        <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-size:13px">
+          <div style="display:flex;align-items:center;gap:5px"><b>A</b>1<input id="trim-A1" type="number" step="1" min="-30" max="30" style="width:50px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px">2<input id="trim-A2" type="number" step="1" min="-30" max="30" style="width:50px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px"></div>
+          <div style="display:flex;align-items:center;gap:5px"><b>B</b>1<input id="trim-B1" type="number" step="1" min="-30" max="30" style="width:50px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px">2<input id="trim-B2" type="number" step="1" min="-30" max="30" style="width:50px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px"></div>
+          <div style="display:flex;align-items:center;gap:5px"><b>C</b>1<input id="trim-C1" type="number" step="1" min="-30" max="30" style="width:50px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px">2<input id="trim-C2" type="number" step="1" min="-30" max="30" style="width:50px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px"></div>
+          <button class="btn-on" id="pwm-trim-save" onclick="savePwmTrim()" style="padding:6px 12px;font-size:12px">Salvar trim</button>
+        </div>
+      </div>
     </div>
 
     <!-- Calibração do sensor de EC — wizard 2 pontos (envia calibrar_ec) -->
@@ -1432,6 +1445,12 @@ function renderFertiStatus(){
     var gh=document.getElementById('ferti-global-hab');
     if(gh)gh.checked=fertiGlobalHab;
   }
+  // Trim manual por bomba: preenche inputs (sem sobrescrever o que o usuário digita)
+  var pt=d.pwm_trim||{};
+  ['A1','A2','B1','B2','C1','C2'].forEach(function(b){
+    var el=document.getElementById('trim-'+b);
+    if(el&&document.activeElement!==el)el.value=(pt[b]!==undefined?pt[b]:0);
+  });
   // Re-render aba se aberta (selects, lista de curva, etc.)
   if(document.getElementById('tab-ferti').style.display!=='none'){
     populateSetorSelect();
@@ -1668,6 +1687,16 @@ function pasteFertiCurva(){
   toast('Curva colada — confirme tocando em Salvar');
 }
 
+// Trim fixo por bomba (%), somado ao PWM nominal que o EC ajusta. Clamp -30..30
+// espelha o clamp do firmware (cmd set_pwm_trim).
+function savePwmTrim(){
+  var trim={};
+  ['A1','A2','B1','B2','C1','C2'].forEach(function(b){
+    var el=document.getElementById('trim-'+b);
+    if(el){var v=parseInt(el.value,10);trim[b]=isNaN(v)?0:Math.max(-30,Math.min(30,v));}
+  });
+  if(publishFerti({cmd:'set_pwm_trim',trim:trim}))toast('🎛 Trim de PWM salvo');
+}
 function purgaAr(par,on){if(publishFerti({cmd:'purga',par:par,on:on}))toast(on?('💨 Purgando ar — par '+par):('Purga par '+par+' parada'));}
 
 init();
