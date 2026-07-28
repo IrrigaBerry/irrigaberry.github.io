@@ -54,6 +54,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .hist-time{font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:1px}
 .hist-dur{font-size:11px;font-weight:700;color:var(--green);font-family:var(--mono)}
 .hist-ec{font-size:11px;font-weight:700;color:var(--blue);font-family:var(--mono);margin-top:1px}
+.graf-jan{background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit}
+.graf-jan.graf-on{background:var(--green);border-color:var(--green);color:#04180c}
+.graf-tit{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;margin:14px 0 4px}
+.graf-tit:first-child{margin-top:4px}
+.graf-nota{font-size:10px;color:var(--muted);margin-top:2px}
 .btn-on{padding:7px 13px;background:rgba(0,229,160,.12);border:1px solid var(--green);color:var(--green);border-radius:var(--radius-sm);font-size:12px;font-weight:700;cursor:pointer}
 .btn-off{padding:7px 13px;background:rgba(255,77,109,.1);border:1px solid var(--red);color:var(--red);border-radius:var(--radius-sm);font-size:12px;font-weight:700;cursor:pointer}
 .save-btn{width:100%;padding:12px;background:var(--green);color:#000;border:none;border-radius:var(--radius);font-size:14px;font-weight:700;cursor:pointer}
@@ -225,6 +230,27 @@ select.cfg-input{cursor:pointer}
   <div id="tab-historico" style="display:none">
     <!-- v1.5: resumo estatístico calculado do histórico do Pi -->
     <div class="card"><div class="card-title">Resumo</div><div id="hist-stats" style="font-size:13px;line-height:1.9;color:var(--muted)">—</div></div>
+
+    <!-- Gráficos: alimentados pelo resumo diário do Pi (tópico
+         irrigation/history/daily), não pela lista de pulsos crus. -->
+    <div class="card">
+      <div class="card-title">Gráficos
+        <span style="float:right;display:flex;gap:4px">
+          <button class="graf-jan graf-on" data-dias="7"   onclick="setJanelaGrafico(7,this)">7d</button>
+          <button class="graf-jan"         data-dias="30"  onclick="setJanelaGrafico(30,this)">30d</button>
+          <button class="graf-jan"         data-dias="365" onclick="setJanelaGrafico(365,this)">12m</button>
+        </span>
+      </div>
+      <div id="graf-vazio" style="color:var(--muted);font-size:13px;display:none">Sem dados ainda — os gráficos aparecem depois da primeira irrigação registrada.</div>
+      <div id="graf-wrap">
+        <div class="graf-tit">Tempo irrigado por dia</div>
+        <div id="graf-tempo"></div>
+        <div class="graf-tit">Tempo por setor</div>
+        <div id="graf-setor"></div>
+        <div class="graf-tit">EC alvo médio</div>
+        <div id="graf-ec"></div>
+      </div>
+    </div>
     <div class="card"><div class="card-title">Últimas irrigações</div><div id="hist-list"><div style="color:var(--muted);font-size:13px">Nenhum histórico ainda</div></div></div>
     <button class="btn-add" style="width:100%;padding:10px" onclick="clearHistory()">🗑 Limpar histórico</button>
   </div>
@@ -410,6 +436,7 @@ select.cfg-input{cursor:pointer}
         esp32_lavoura01/irrigation/schedule <span style="color:var(--green)">(retain · ACK)</span><br>
         esp32_lavoura01/irrigation/online <span style="color:var(--green)">(retain · LWT)</span><br>
         esp32_lavoura01/irrigation/history <span style="color:var(--green)">(retain · Pi)</span><br>
+        esp32_lavoura01/irrigation/history/daily <span style="color:var(--green)">(retain · Pi)</span><br>
         esp32_lavoura01/irrigation/history/clear<br>
         esp32_lavoura01/substratoNN/leitura <span style="color:var(--green)">(retain)</span><br>
         esp32_lavoura01/substratoNN/online <span style="color:var(--green)">(retain)</span><br>
@@ -543,6 +570,7 @@ function init(){
   if(saved.user)document.getElementById('inp-user').value=saved.user;
   if(saved.pass)document.getElementById('inp-pass').value=saved.pass;
   renderHistory();
+  renderGraficos();
   // v1.5: só auto-conecta se já tem senha salva (senha não vem mais no HTML)
   if(document.getElementById('inp-broker').value&&document.getElementById('inp-pass').value)connect();
   else if(!saved.pass)toast('Informe a senha na aba Conexão');
@@ -573,7 +601,7 @@ function showTab(name,el){
   if(el)el.classList.add('active');
   if(name==='config')renderConfigSectors();
   if(name==='manual')renderManualSectors();
-  if(name==='historico')renderHistory();
+  if(name==='historico'){renderHistory();renderGraficos();}
   if(name==='sensores')renderSubstratos();
   if(name==='conn')renderSistema();
   if(name==='ferti'){populateSetorSelect();renderFertiSetores();loadFertiCurva();renderFertiStatus();}
@@ -603,6 +631,7 @@ function connect(){
     client.subscribe(T+'/irrigation/schedule');
     client.subscribe(T+'/irrigation/online');
     client.subscribe(T+'/irrigation/history'); // v1.4: histórico do Pi
+    client.subscribe(T+'/irrigation/history/daily'); // resumo por dia (gráficos)
     // v1.5: substrato (nós LoRa republicados pelo controlador) — só se o kit tem
     if(recSubstrato){
       client.subscribe(T+'/+/leitura');
@@ -632,6 +661,7 @@ function connect(){
       if(t===T+'/irrigation/status')onStatus(d);
       else if(t===T+'/irrigation/schedule')onSchedule(d);
       else if(t===T+'/irrigation/history')onHistory(d); // v1.4
+      else if(t===T+'/irrigation/history/daily')onDaily(d); // resumo diário (gráficos)
       else if(t==='fertigacao/status')onFertiStatus(d);
       else if(t==='fertigacao/curvas')onFertiCurvas(d); // v1.5
     }catch(e){}
@@ -856,6 +886,151 @@ function renderHistStats(){
     +(chips?chips+'<br>':'')
     +'Últimos 7 dias: <b style="color:var(--text)">'+fmtDur(t7)+'</b>'
     +'<br><span style="font-size:10px">(sobre os últimos registros publicados pelo Pi)</span>';
+}
+/* ── Gráficos da aba Histórico ───────────────────────────────
+   Fonte: resumo diário do Pi (1 linha por dia), não a lista de pulsos —
+   50 pulsos crus dariam 5 dias de gráfico. Formato de cada dia:
+   {d:'dd/mm/yyyy', n:pulsos, t:segundos, s:{setor:segundos}, a:EC alvo médio}
+   'a' e 's' podem faltar (ferti desligada / dia antigo, sem detalhe). */
+var histDiario=[],grafJanela=7;
+function onDaily(data){
+  histDiario=Array.isArray(data)?data:(data.d||[]);
+  if(document.getElementById('tab-historico').style.display!=='none')renderGraficos();
+}
+function setJanelaGrafico(dias,btn){
+  grafJanela=dias;
+  var bs=document.querySelectorAll('.graf-jan');
+  for(var i=0;i<bs.length;i++)bs[i].className='graf-jan'+(bs[i]===btn?' graf-on':'');
+  renderGraficos();
+}
+// 'dd/mm/yyyy' -> Date (meia-noite local). null se vier torto.
+function parseDia(s){
+  var p=String(s||'').split('/');
+  if(p.length!==3)return null;
+  var dt=new Date(parseInt(p[2],10),parseInt(p[1],10)-1,parseInt(p[0],10));
+  return isNaN(dt.getTime())?null:dt;
+}
+function fmtDiaCurto(dt){return ('0'+dt.getDate()).slice(-2)+'/'+('0'+(dt.getMonth()+1)).slice(-2);}
+var MESES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+
+// Série do gráfico de tempo/EC. Até 30 dias mostra dia a dia (com os dias
+// sem irrigação como barra zero — buraco na irrigação é justamente o que
+// interessa ver); 12m agrupa por mês.
+function serieGrafico(){
+  var hoje=new Date();hoje.setHours(0,0,0,0);
+  var porChave={},serie=[],i,k;
+  var mensal=grafJanela>31;
+  histDiario.forEach(function(x){
+    var dt=parseDia(x.d);if(!dt)return;
+    var diasAtras=Math.round((hoje-dt)/86400000);
+    if(diasAtras<0||diasAtras>=grafJanela)return;
+    k=mensal?(dt.getFullYear()+'-'+dt.getMonth()):x.d;
+    var o=porChave[k]||(porChave[k]={t:0,n:0,ec:0,ecd:0,dt:dt});
+    o.t+=x.t||0;o.n+=x.n||0;
+    if(typeof x.a==='number'&&x.t){o.ec+=x.a*x.t;o.ecd+=x.t;}
+    if(dt>o.dt)o.dt=dt;
+  });
+  if(mensal){
+    var base=new Date(hoje.getFullYear(),hoje.getMonth(),1);
+    for(i=11;i>=0;i--){
+      var m=new Date(base.getFullYear(),base.getMonth()-i,1);
+      k=m.getFullYear()+'-'+m.getMonth();
+      var o=porChave[k];
+      serie.push({label:MESES[m.getMonth()],titulo:MESES[m.getMonth()]+'/'+m.getFullYear(),
+                  t:o?o.t:0,n:o?o.n:0,ec:(o&&o.ecd)?o.ec/o.ecd:null});
+    }
+  }else{
+    for(i=grafJanela-1;i>=0;i--){
+      var d=new Date(hoje.getTime()-i*86400000);
+      var chave=('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear();
+      var v=porChave[chave];
+      serie.push({label:fmtDiaCurto(d),titulo:chave,
+                  t:v?v.t:0,n:v?v.n:0,ec:(v&&v.ecd)?v.ec/v.ecd:null});
+    }
+  }
+  return serie;
+}
+// Soma por setor na janela. Dias antigos vêm sem o detalhe 's' (o Pi corta
+// pra não inchar o payload), então devolve também quantos dias entraram.
+function serieSetores(){
+  var hoje=new Date();hoje.setHours(0,0,0,0);
+  var acc={},dias=0;
+  histDiario.forEach(function(x){
+    var dt=parseDia(x.d);if(!dt)return;
+    var diasAtras=Math.round((hoje-dt)/86400000);
+    if(diasAtras<0||diasAtras>=grafJanela||!x.s)return;
+    dias++;
+    for(var sid in x.s)if(x.s.hasOwnProperty(sid))acc[sid]=(acc[sid]||0)+x.s[sid];
+  });
+  var lista=Object.keys(acc).map(function(k){return {setor:k,t:acc[k]};});
+  lista.sort(function(a,b){return parseInt(a.setor,10)-parseInt(b.setor,10);});
+  return {lista:lista,dias:dias};
+}
+// SVG feito na mão: o app é um arquivo só, sem CDN, e roda no celular no
+// meio da lavoura — não dá pra carregar biblioteca de gráfico.
+function svgBarras(serie){
+  var W=320,H=110,padB=16,padT=8,n=serie.length||1;
+  var max=0;serie.forEach(function(p){if(p.t>max)max=p.t;});
+  if(!max)return '<div style="color:var(--muted);font-size:12px;padding:6px 0">Nenhuma irrigação no período</div>';
+  var passo=W/n,larg=Math.max(2,Math.min(passo-2,passo*0.72)),alt=H-padB-padT,s='';
+  // rótulo em no máximo ~8 posições, senão vira borrão no celular
+  var cadaN=Math.ceil(n/8);
+  serie.forEach(function(p,i){
+    var h=p.t?Math.max(1.5,alt*p.t/max):0,x=i*passo+(passo-larg)/2,y=padT+alt-h;
+    s+='<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+larg.toFixed(1)+'" height="'+h.toFixed(1)
+      +'" rx="1.5" fill="var(--green)" opacity="'+(p.t?1:0.25)+'"><title>'+escapeHtml(p.titulo)+': '
+      +fmtDur(p.t)+(p.n?' · '+p.n+' pulsos':'')+'</title></rect>';
+    if(i%cadaN===0)s+='<text x="'+(i*passo+passo/2).toFixed(1)+'" y="'+(H-4)
+      +'" text-anchor="middle" font-size="8" fill="var(--muted)">'+escapeHtml(p.label)+'</text>';
+  });
+  s+='<line x1="0" y1="'+(padT+alt)+'" x2="'+W+'" y2="'+(padT+alt)+'" stroke="var(--border)" stroke-width="1"/>';
+  // escala proporcional (sem preserveAspectRatio="none", que esticaria os
+  // rótulos em tela larga)
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="display:block;width:100%;height:auto">'+s+'</svg>'
+    +'<div class="graf-nota">pico: '+fmtDur(max)+' num dia</div>';
+}
+function svgBarrasSetor(dados){
+  if(!dados.lista.length)return '<div style="color:var(--muted);font-size:12px;padding:6px 0">Sem detalhe por setor no período</div>';
+  var max=0;dados.lista.forEach(function(p){if(p.t>max)max=p.t;});
+  var s='';
+  dados.lista.forEach(function(p){
+    var pct=max?Math.max(1,100*p.t/max):0;
+    s+='<div style="display:flex;align-items:center;gap:6px;margin:3px 0" title="Setor '+escapeHtml(p.setor)+': '+fmtDur(p.t)+'">'
+      +'<span style="font-size:11px;font-family:var(--mono);color:var(--muted);width:26px;flex:none">S'+escapeHtml(p.setor)+'</span>'
+      +'<span style="flex:1;background:var(--surface2);border-radius:4px;height:12px;overflow:hidden">'
+      +'<span style="display:block;height:100%;width:'+pct.toFixed(1)+'%;background:var(--blue);border-radius:4px"></span></span>'
+      +'<span style="font-size:11px;font-family:var(--mono);color:var(--text);width:60px;text-align:right;flex:none">'+fmtDur(p.t)+'</span></div>';
+  });
+  return s+'<div class="graf-nota">'+dados.dias+' dia(s) com detalhe por setor</div>';
+}
+function svgLinhaEc(serie){
+  var pts=[],W=320,H=90,padT=8,padB=16,alt=H-padT-padB;
+  var comEc=serie.filter(function(p){return p.ec!==null;});
+  if(comEc.length<1)return '<div style="color:var(--muted);font-size:12px;padding:6px 0">Sem EC alvo registrada no período</div>';
+  var min=Infinity,max=-Infinity;
+  comEc.forEach(function(p){if(p.ec<min)min=p.ec;if(p.ec>max)max=p.ec;});
+  if(max-min<100){min=Math.max(0,min-50);max=max+50;} // faixa mínima, senão vira serra de ruído
+  var n=serie.length||1,passo=n>1?W/(n-1):W,s='';
+  serie.forEach(function(p,i){
+    if(p.ec===null)return;
+    var x=n>1?i*passo:W/2,y=padT+alt-alt*(p.ec-min)/(max-min);
+    pts.push(x.toFixed(1)+','+y.toFixed(1));
+    s+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="2.5" fill="var(--blue)"><title>'
+      +escapeHtml(p.titulo)+': '+(p.ec/1000).toFixed(2)+' mS/cm</title></circle>';
+  });
+  var linha=pts.length>1?'<polyline points="'+pts.join(' ')+'" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linejoin="round"/>':'';
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="display:block;width:100%;height:auto">'
+    +linha+s+'</svg><div class="graf-nota">faixa: '+(min/1000).toFixed(2)+' – '+(max/1000).toFixed(2)+' mS/cm</div>';
+}
+function renderGraficos(){
+  var vazio=document.getElementById('graf-vazio'),wrap=document.getElementById('graf-wrap');
+  if(!vazio||!wrap)return;
+  if(!histDiario.length){vazio.style.display='';wrap.style.display='none';return;}
+  vazio.style.display='none';wrap.style.display='';
+  var serie=serieGrafico();
+  document.getElementById('graf-tempo').innerHTML=svgBarras(serie);
+  document.getElementById('graf-setor').innerHTML=svgBarrasSetor(serieSetores());
+  document.getElementById('graf-ec').innerHTML=svgLinhaEc(serie);
 }
 function clearHistory(){
   if(!confirm('Limpar todo o histórico? Esta ação não pode ser desfeita e afeta o histórico salvo no servidor.'))return;
