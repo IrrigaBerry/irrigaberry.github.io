@@ -53,6 +53,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .hist-title{font-size:13px;font-weight:600}
 .hist-time{font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:1px}
 .hist-dur{font-size:11px;font-weight:700;color:var(--green);font-family:var(--mono)}
+.hist-ec{font-size:11px;font-weight:700;color:var(--blue);font-family:var(--mono);margin-top:1px}
 .btn-on{padding:7px 13px;background:rgba(0,229,160,.12);border:1px solid var(--green);color:var(--green);border-radius:var(--radius-sm);font-size:12px;font-weight:700;cursor:pointer}
 .btn-off{padding:7px 13px;background:rgba(255,77,109,.1);border:1px solid var(--red);color:var(--red);border-radius:var(--radius-sm);font-size:12px;font-weight:700;cursor:pointer}
 .save-btn{width:100%;padding:12px;background:var(--green);color:#000;border:none;border-radius:var(--radius);font-size:14px;font-weight:700;cursor:pointer}
@@ -803,8 +804,15 @@ function tickUI(){
 /* ── Histórico (v1.4: vem do Pi; v1.5: + resumo estatístico) ── */
 function onHistory(data){
   var list=Array.isArray(data)?data:(data.h||[]);
-  irrigHistory=list.map(function(e){return {sector:e.s,dur:e.d,ts:e.t};});
+  // e = EC media do pulso em uS/cm (o Pi acumula fertigacao/status.ec_atual
+  // enquanto o setor esta aberto). Ausente em pulso sem injetora.
+  irrigHistory=list.map(function(e){return {sector:e.s,dur:e.d,ts:e.t,ec:(typeof e.e==='number'?e.e:null)};});
   renderHistory();
+}
+// EC media do pulso: vem em uS/cm do Pi, mostra em mS/cm (unidade do produtor).
+function fmtEc(uscm){
+  if(uscm===null||uscm===undefined||isNaN(uscm))return '<span style="color:var(--muted)">EC —</span>';
+  return 'EC '+(uscm/1000).toFixed(2);
 }
 function fmtDur(sec){
   var m=Math.floor(sec/60),s=sec%60;
@@ -816,7 +824,7 @@ function renderHistory(){
   var el=document.getElementById('hist-list');
   if(!irrigHistory.length){el.innerHTML='<div style="color:var(--muted);font-size:13px">Nenhum histórico ainda<br><br><span style="font-size:11px">⚠ Aguardando o script <code>historico_irrigacao.py</code> no Raspberry Pi</span></div>';}
   else{
-    el.innerHTML=irrigHistory.map(function(h){return '<div class="hist-item"><div class="hist-info"><div class="hist-title">💧 Setor '+h.sector+'</div><div class="hist-time">'+escapeHtml(h.ts||'')+'</div></div><div class="hist-dur">'+fmtDur(h.dur)+'</div></div>';}).join('');
+    el.innerHTML=irrigHistory.map(function(h){return '<div class="hist-item"><div class="hist-info"><div class="hist-title">💧 Setor '+h.sector+'</div><div class="hist-time">'+escapeHtml(h.ts||'')+'</div></div><div style="text-align:right"><div class="hist-dur">'+fmtDur(h.dur)+'</div><div class="hist-ec">'+fmtEc(h.ec)+'</div></div></div>';}).join('');
   }
   renderHistStats();
 }
@@ -828,16 +836,22 @@ function renderHistStats(){
   var now=new Date();
   var hoje=('0'+now.getDate()).slice(-2)+'/'+('0'+(now.getMonth()+1)).slice(-2)+'/'+now.getFullYear();
   var limite7=now.getTime()-7*86400000;
-  var tHoje=0,nHoje=0,porSetor={},t7=0;
+  var tHoje=0,nHoje=0,porSetor={},t7=0,ecSoma=0,ecN=0;
   irrigHistory.forEach(function(h){
     var dpart=(h.ts||'').split(' ')[0],p=dpart.split('/');
     if(p.length!==3)return;
-    if(dpart===hoje){tHoje+=h.dur;nHoje++;porSetor[h.sector]=(porSetor[h.sector]||0)+h.dur;}
+    if(dpart===hoje){
+      tHoje+=h.dur;nHoje++;porSetor[h.sector]=(porSetor[h.sector]||0)+h.dur;
+      // EC media do dia: media dos pulsos que tem leitura (ponderada por duracao,
+      // senao um pulso de 1min pesa igual a um de 40min)
+      if(h.ec!==null&&h.ec!==undefined){ecSoma+=h.ec*h.dur;ecN+=h.dur;}
+    }
     var dt=new Date(parseInt(p[2]),parseInt(p[1])-1,parseInt(p[0]));
     if(dt.getTime()>=limite7)t7+=h.dur;
   });
   var chips=Object.keys(porSetor).sort().map(function(k){return '<span class="badge badge-blue">S'+k+' '+fmtDur(porSetor[k])+'</span>';}).join(' ');
-  el.innerHTML='Hoje: <b style="color:var(--text)">'+nHoje+'</b> irrigações · <b style="color:var(--green)">'+fmtDur(tHoje)+'</b><br>'
+  el.innerHTML='Hoje: <b style="color:var(--text)">'+nHoje+'</b> irrigações · <b style="color:var(--green)">'+fmtDur(tHoje)+'</b>'
+    +(ecN?' · EC média <b style="color:var(--blue)">'+(ecSoma/ecN/1000).toFixed(2)+'</b> mS/cm':'')+'<br>'
     +(chips?chips+'<br>':'')
     +'Últimos 7 dias: <b style="color:var(--text)">'+fmtDur(t7)+'</b>'
     +'<br><span style="font-size:10px">(sobre os últimos registros publicados pelo Pi)</span>';
@@ -1413,8 +1427,10 @@ function onFertiStatus(data){
 
 function renderFertiStatus(){
   var d=lastFertiStatus||{};
-  if(d.ec_atual!==undefined)document.getElementById('ec-atual').textContent=parseFloat(d.ec_atual).toFixed(2);
-  if(d.ec_alvo!==undefined)document.getElementById('ec-alvo').textContent=parseFloat(d.ec_alvo).toFixed(2);
+  // Firmware publica ec_atual/ec_alvo em uS/cm; o card mostra mS/cm (o que o
+  // produtor le, igual ao LCD da injetora e ao histórico).
+  if(d.ec_atual!==undefined)document.getElementById('ec-atual').textContent=(parseFloat(d.ec_atual)/1000).toFixed(2);
+  if(d.ec_alvo!==undefined)document.getElementById('ec-alvo').textContent=(parseFloat(d.ec_alvo)/1000).toFixed(2);
   // v1.5: par ativo / setor / PWM por bomba (contrato do fertigacao/status)
   var extra=document.getElementById('ferti-extra');
   var parts=[];
