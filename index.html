@@ -97,6 +97,12 @@ select.cfg-input{cursor:pointer}
 .sens-val{font-size:16px;font-weight:800;font-family:var(--mono);margin-top:2px}
 .sens-unit{font-size:9px;color:var(--muted);font-family:var(--mono)}
 
+/* ===== v1.9: seletor de modo de irrigação (horário/sensor) ===== */
+.modo-seg{display:flex;gap:8px;margin:2px 0 10px}
+.modo-opt{flex:1;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:13px;font-weight:700;cursor:pointer}
+.modo-opt.sel{border-color:var(--green);background:rgba(46,204,113,.12);color:var(--green)}
+.modo-opt.modo-dis{opacity:.45}
+
 /* ===== v1.5: Sistema / OTA ===== */
 .sys-row{display:flex;align-items:flex-start;gap:10px;padding:11px 0;border-bottom:1px solid var(--border)}
 .sys-row:last-child{border-bottom:none;padding-bottom:0}
@@ -216,8 +222,16 @@ select.cfg-input{cursor:pointer}
     <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px;line-height:1.5">Toque no setor para expandir e editar<br>Toggle liga/desliga a programação imediatamente</div>
   </div>
 
-  <!-- aba Sensores — nós de substrato (umidade + EC). Fase 1: só observação -->
+  <!-- aba Sensores — estação meteo + nós de substrato (umidade + EC). Fase 1: só observação -->
   <div id="tab-sensores" style="display:none">
+    <!-- v1.9: Estação meteorológica (add-on estacao=1 no link) -->
+    <div class="card" id="card-estacao" style="display:none">
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+        <span>Estação meteorológica</span>
+        <button class="toggle" id="estacao-toggle" onclick="toggleEstacao()" title="Liga/desliga a estação"></button>
+      </div>
+      <div id="estacao-grid"><div style="color:var(--muted);font-size:13px">Estação não instalada / sem dados ainda</div></div>
+    </div>
     <div class="card" id="card-substrato">
       <div class="card-title">Substrato (nós LoRa)</div>
       <div id="substrato-list"><div style="color:var(--muted);font-size:13px">Nenhum nó de substrato reportando ainda</div></div>
@@ -502,10 +516,12 @@ select.cfg-input{cursor:pointer}
 <script>
 var T='esp32_lavoura01';
 var recSubstrato=false; // v1.8: recursos opcionais por kit (flags no link)
+var recEstacao=false;   // v1.9: estacao meteo opcional por kit (flag estacao=1 no link)
+var estacaoAtiva=true;  // v1.9: chave liga/desliga a estacao (persistida em mqtt_cfg)
 var client=null;
 var mqttUser='webapp'; // usuário MQTT conectado
 var state={sectors:[],pump:false,current_sector:null,datetime:''};
-var cfgSchedules={},cfgEnabled={},cfgExpanded={};
+var cfgSchedules={},cfgEnabled={},cfgExpanded={},cfgModo={}; // cfgModo: 'horario'|'sensor' por setor
 // v1.7 (2026-06-13): curva agora vive POR SETOR (antes era por par).
 // fertiCurvas indexada pelo sector_id (string) — ex: {"1":[...], "2":[...]}.
 // fertiSetoresHab = {sid: bool} (ferti habilitada por setor).
@@ -526,6 +542,7 @@ var espOnline=null,lastStatusTs=null,lastStatusDatetime='';
 var telemetria=null;
 var fertiOnline=null;
 var substratos={};
+var estacao={online:null,dados:{},rx:null}; // v1.9: estado da estacao meteo
 // v1.5: ACK de set_sector — firmware republica o schedule após aplicar
 var pendingAcks={};
 // v1.5: sequência multi-zonas com deadline de relógio de parede,
@@ -590,9 +607,13 @@ function aplicaCliente(nome){
 // com substrato=1 — sem tocar código.
 function aplicaRecursos(cfg){
   recSubstrato=String(cfg.substrato)==='1';
+  recEstacao=String(cfg.estacao)==='1'; // v1.9: add-on estacao meteo
+  if(cfg.estacao_ativa!==undefined)estacaoAtiva=String(cfg.estacao_ativa)!=='0';
   var show=function(id,on){var el=document.getElementById(id); if(el)el.style.display=on?'':'none';};
   show('card-substrato',recSubstrato);
-  show('tab-btn-sensores',recSubstrato);
+  show('card-estacao',recEstacao);
+  // aba Sensores aparece se o kit tem QUALQUER sensor (substrato ou estacao)
+  show('tab-btn-sensores',recSubstrato||recEstacao);
 }
 
 function showTab(name,el){
@@ -602,7 +623,7 @@ function showTab(name,el){
   if(name==='config')renderConfigSectors();
   if(name==='manual')renderManualSectors();
   if(name==='historico'){renderHistory();renderGraficos();}
-  if(name==='sensores')renderSubstratos();
+  if(name==='sensores'){renderSubstratos();renderEstacao();}
   if(name==='conn')renderSistema();
   if(name==='ferti'){populateSetorSelect();renderFertiSetores();loadFertiCurva();renderFertiStatus();}
 }
@@ -637,6 +658,10 @@ function connect(){
       client.subscribe(T+'/+/leitura');
       client.subscribe(T+'/+/online');
     }
+    // v1.9: estacao meteo — status (online/rssi) + metricas por topico
+    if(recEstacao){
+      client.subscribe('esp32_estacao01/meteo/+');
+    }
     client.subscribe('fertigacao/status');
     client.subscribe('fertigacao/online');  // v1.5
     client.subscribe('fertigacao/curvas');  // v1.5: curvas/pares retained
@@ -657,6 +682,9 @@ function connect(){
     if(t==='fertigacao/online'){onFertiOnline(msg);return;}
     var mSub=t.match(/^esp32_lavoura01\/(substrato\d+)\/(leitura|online)$/);
     if(mSub){onSubstrato(mSub[1],mSub[2],msg);return;}
+    // v1.9: estacao meteo — meteo/status (JSON) + meteo/<metrica> (valor cru)
+    var mEst=t.match(/^esp32_estacao01\/meteo\/(.+)$/);
+    if(mEst){onEstacao(mEst[1],msg);return;}
     try{var d=JSON.parse(msg);
       if(t===T+'/irrigation/status')onStatus(d);
       else if(t===T+'/irrigation/schedule')onSchedule(d);
@@ -1314,6 +1342,14 @@ function renderConfigSectors(){
     html+='<div class="cfg-chev">▼</div></div>';
     if(expanded){
       html+='<div class="cfg-body"><div class="cfg-body-pad">';
+      var modo=cfgModo[sid]||sec.modo||'horario';
+      var sensorOk=recSubstrato; // modo sensor exige nó de substrato instalado
+      html+='<label class="cfg-label">Irrigar por</label>';
+      html+='<div class="modo-seg">';
+      html+='<button class="modo-opt'+(modo==='horario'?' sel':'')+'" onclick="setModo('+sid+',\'horario\')">⏰ Horário</button>';
+      html+='<button class="modo-opt'+(modo==='sensor'?' sel':'')+(sensorOk?'':' modo-dis')+'" onclick="'+(sensorOk?'setModo('+sid+',\'sensor\')':'toast(\'Requer sensor de substrato instalado\')')+'">💧 Sensor</button>';
+      html+='</div>';
+      if(modo==='sensor')html+='<div style="font-size:10px;color:var(--muted);margin:-4px 0 8px;line-height:1.5">Irriga quando a umidade do substrato cair abaixo do limite. Recurso em implantação — precisa do nó de substrato.</div>';
       html+='<label class="cfg-label">Nome</label>';
       html+='<input class="cfg-input" id="cfg-name-'+sid+'" value="'+escapeAttr(sec.name||'')+'" placeholder="Ex: Lavoura 1">';
       html+='<label class="cfg-label">Duração</label><div style="display:flex;gap:8px">';
@@ -1338,7 +1374,7 @@ function toggleCfgExpand(sid){
   // v1.5: ao abrir pra edição, parte do estado real do firmware
   if(cfgExpanded[sid]){
     var sec=(state.sectors||[]).find(function(s){return s.id===sid;});
-    if(sec){cfgSchedules[sid]=(sec.schedules||[]).slice();cfgEnabled[sid]=sec.enabled!==false;}
+    if(sec){cfgSchedules[sid]=(sec.schedules||[]).slice();cfgEnabled[sid]=sec.enabled!==false;cfgModo[sid]=sec.modo||'horario';}
   }
   renderConfigSectors();
 }
@@ -1355,9 +1391,10 @@ function toggleSectorEnabled(sid){
   var dmin=sec.duration_min!==undefined?sec.duration_min:(sec.duration||15);
   var dsec=sec.duration_sec||0;
   var scheds=(cfgSchedules[sid]&&cfgSchedules[sid].length)?cfgSchedules[sid]:(sec.schedules||[]);
+  var modo=cfgModo[sid]||sec.modo||'horario';
   // v1.5: app NÃO publica mais no tópico schedule — o firmware republica
   // retained após aplicar (e isso serve de ACK).
-  if(publish({cmd:'set_sector',sector:sid,name:name,duration_min:dmin,duration_sec:dsec,enabled:newEnabled,schedules:scheds})){
+  if(publish({cmd:'set_sector',sector:sid,name:name,duration_min:dmin,duration_sec:dsec,enabled:newEnabled,schedules:scheds,modo:modo})){
     expectAck(sid);
     toast('Setor '+sid+(newEnabled?' ATIVADO':' DESATIVADO'));
   }else{
@@ -1385,17 +1422,20 @@ function removeScheduleInline(sid,t){
   if(tagsEl){tagsEl.innerHTML=cfgSchedules[sid].map(function(t2){return '<div class="sched-tag">'+t2+'<span class="sched-tag-x" onclick="removeScheduleInline('+sid+',\''+t2+'\')">×</span></div>';}).join('');}
 }
 
+function setModo(sid,m){cfgModo[sid]=m;renderConfigSectors();}
+
 function saveSectorInline(sid){
   var sec=(state.sectors||[]).find(function(s){return s.id===sid;})||{};
   var name=document.getElementById('cfg-name-'+sid).value.trim();
   var dmin=parseInt(document.getElementById('cfg-dmin-'+sid).value)||0;
   var dsec=parseInt(document.getElementById('cfg-dsec-'+sid).value)||0;
   var enabled=cfgEnabled[sid]!==false;
+  var modo=cfgModo[sid]||sec.modo||'horario';
   // v1.5: ao expandir o card o buffer parte do firmware, então aqui o
   // cfgSchedules reflete exatamente o que o usuário vê nas tags —
   // inclusive lista vazia de propósito (remover todos os horários).
   var scheds=cfgSchedules[sid]||[];
-  if(publish({cmd:'set_sector',sector:sid,name:name,duration_min:dmin,duration_sec:dsec,enabled:enabled,schedules:scheds})){
+  if(publish({cmd:'set_sector',sector:sid,name:name,duration_min:dmin,duration_sec:dsec,enabled:enabled,schedules:scheds,modo:modo})){
     expectAck(sid);
     toast('Setor '+sid+' enviado — aguardando confirmação...');
   }
@@ -1547,6 +1587,80 @@ function renderSubstratos(){
       +'<span class="sector-name">Substrato '+(n<10?'0':'')+n+'</span>'+badges+'</div>'
       +grid+foot+'</div>';
   }).join('');
+}
+
+/* ===================================================================== */
+/*  v1.9 — Estação meteorológica (add-on)                                 */
+/* ===================================================================== */
+
+// Recebe cada tópico esp32_estacao01/meteo/<sub>. 'status' = JSON de
+// presença (online/rssi/uptime); qualquer outro = valor cru da métrica.
+function onEstacao(sub,msg){
+  estacao.rx=Date.now();
+  if(sub==='status'){
+    try{var s=JSON.parse(msg);estacao.online=(s.online===true||s.online==='1'||s.online===1);estacao.rssi=s.rssi;}catch(e){}
+  }else if(sub==='comando'||sub==='alerta'){
+    // ignora eco de comando; alerta tratado à parte no futuro
+    return;
+  }else{
+    var v=parseFloat(msg);
+    estacao.dados[sub]=isNaN(v)?msg:v;
+  }
+  renderEstacao();
+}
+
+function estFmt(k,unit,dec){
+  var v=estacao.dados[k];
+  if(v===undefined||v===null||v==='')return '—';
+  if(typeof v==='number')v=(dec!==undefined?v.toFixed(dec):v);
+  return v+(unit?' <span class="sens-unit">'+unit+'</span>':'');
+}
+
+function renderEstacao(){
+  var el=document.getElementById('estacao-grid');if(!el)return;
+  // reflete a chave liga/desliga no botão
+  var tg=document.getElementById('estacao-toggle');
+  if(tg)tg.className='toggle'+(estacaoAtiva?' on':'');
+  if(!estacaoAtiva){
+    el.innerHTML='<div style="color:var(--muted);font-size:13px">Estação DESLIGADA pela chave. Ligue para ver as leituras e usar no controle por sensor.</div>';
+    return;
+  }
+  var temNada=!estacao.dados||!Object.keys(estacao.dados).length;
+  if(temNada&&estacao.online===null){
+    el.innerHTML='<div style="color:var(--muted);font-size:13px">Estação não instalada / sem dados ainda</div>';
+    return;
+  }
+  var grid='<div class="sens-grid" style="margin-top:8px">'
+    +'<div class="sens-item"><div class="sens-lbl">Temp</div><div class="sens-val">'+estFmt('temperatura','°C',1)+'</div></div>'
+    +'<div class="sens-item"><div class="sens-lbl">Umidade</div><div class="sens-val">'+estFmt('umidade','%',0)+'</div></div>'
+    +'<div class="sens-item"><div class="sens-lbl">Pressão</div><div class="sens-val">'+estFmt('pressao','hPa',0)+'</div></div>'
+    +'<div class="sens-item"><div class="sens-lbl">Lux</div><div class="sens-val">'+estFmt('lux','lx',0)+'</div></div>'
+    +'<div class="sens-item"><div class="sens-lbl">Vento</div><div class="sens-val">'+estFmt('vento_velocidade','m/s',1)+'</div></div>'
+    +'<div class="sens-item"><div class="sens-lbl">Chuva dia</div><div class="sens-val">'+estFmt('chuva_mm_dia','mm',1)+'</div></div>'
+    +'<div class="sens-item"><div class="sens-lbl">VPD</div><div class="sens-val">'+estFmt('vpd','kPa',2)+'</div></div>'
+    +'<div class="sens-item"><div class="sens-lbl">Orvalho</div><div class="sens-val">'+estFmt('ponto_orvalho','°C',1)+'</div></div>'
+    +'</div>';
+  var online=estacao.online;
+  var foot='<div style="display:flex;align-items:center;gap:8px;margin-top:8px">'
+    +'<div class="dot '+(online===true?'dot-active':online===false?'dot-off':'dot-idle')+'"></div>'
+    +'<span style="font-size:11px;color:var(--muted)">'+(online===true?'online':online===false?'offline':'sem presença')
+    +(estacao.rssi!==undefined?' · 📶 '+estacao.rssi+'dBm':'')+'</span></div>';
+  el.innerHTML=grid+foot;
+}
+
+// Chave liga/desliga a estação. Persiste local e (se conectado) avisa a
+// estação por comando STRING (o firmware da estação usa payload string,
+// não JSON — ver skill frota, tópico esp32_estacao01/meteo/comando).
+function toggleEstacao(){
+  estacaoAtiva=!estacaoAtiva;
+  var cfg=JSON.parse(localStorage.getItem('mqtt_cfg')||'{}');
+  cfg.estacao_ativa=estacaoAtiva?'1':'0';
+  localStorage.setItem('mqtt_cfg',JSON.stringify(cfg));
+  if(client&&client.connected){
+    client.publish('esp32_estacao01/meteo/comando',estacaoAtiva?'ativar':'desativar',{qos:1});
+  }
+  toast(estacaoAtiva?'Estação LIGADA':'Estação DESLIGADA');
+  renderEstacao();
 }
 
 /* ===================================================================== */
