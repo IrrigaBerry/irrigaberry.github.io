@@ -676,6 +676,7 @@ function connect(){
     client.subscribe('fertigacao/status');
     client.subscribe('fertigacao/online');  // v1.5
     client.subscribe('fertigacao/curvas');  // v1.5: curvas/pares retained
+    client.subscribe('fertigacao/config');  // setores+curvas (retido) — recarrega curva no browser limpo
     client.subscribe('fertigacao/memoria'); // memoria EC aprendida (gestao/apagar)
     toast('✅ Conectado!');
     // v1.5: retoma sequência multi-zonas interrompida por reload/crash
@@ -704,6 +705,7 @@ function connect(){
       else if(t===T+'/irrigation/history/daily')onDaily(d); // resumo diário (gráficos)
       else if(t==='fertigacao/status')onFertiStatus(d);
       else if(t==='fertigacao/curvas')onFertiCurvas(d); // v1.5
+      else if(t==='fertigacao/config')onFertiConfig(d); // setores+curvas (retido)
       else if(t==='fertigacao/memoria')onFertiMem(d); // memoria EC aprendida
     }catch(e){}
   });
@@ -1727,6 +1729,29 @@ var fertiMem=null; // {metodo:'pwm'|'fluxo', memoria:{par:{setor:{bucket_uscm:pw
 function onFertiStatus(data){
   lastFertiStatus=data;
   renderFertiStatus();
+}
+
+// ── Config pesada (setores+curvas+par+ferti_habilitada) do topico retido
+//    fertigacao/config. Sem isso a curva nao recarrega num browser limpo
+//    (o firmware tirou setores do status de 5s por heap). ────────────────
+function onFertiConfig(d){
+  if(d&&Array.isArray(d.setores)){
+    d.setores.forEach(function(s){
+      var sid=String(s.id);
+      ensureSetor(s.id);
+      if(s.par)fertiSetores[sid]=s.par;
+      if(Array.isArray(s.curva)&&sid!==String(fertiCurvaDirty))fertiCurvas[sid]=s.curva;
+      if(typeof s.ferti_habilitada!=='undefined')fertiSetoresHab[sid]=!!s.ferti_habilitada;
+    });
+  }
+  if(d&&typeof d.ferti_habilitada!=='undefined'){
+    fertiGlobalHab=!!d.ferti_habilitada;
+    var gh=document.getElementById('ferti-global-hab');
+    if(gh)gh.checked=fertiGlobalHab;
+  }
+  populateSetorSelect();
+  var tf=document.getElementById('tab-ferti');
+  if(tf&&tf.style.display!=='none'){renderFertiSetores();loadFertiCurva();}
 }
 
 // ── Memória EC aprendida (topico retido fertigacao/memoria) ────────────
