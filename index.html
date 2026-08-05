@@ -324,6 +324,17 @@ select.cfg-input{cursor:pointer}
       </div>
     </div>
 
+    <!-- Memória EC aprendida por par×setor. Apagar força o Modo 1 (recalibra do
+         zero). Usar ao TROCAR a adubação: o PWM salvo do adubo velho não bate
+         mais o EC no tempo do pulso. -->
+    <div class="card">
+      <div class="card-title">🧠 Memória EC aprendida
+        <button class="btn-on" onclick="publishFerti({cmd:'get_status'})" style="float:right;padding:4px 10px;font-size:12px">🔄 Atualizar</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5">PWM que a injetora aprendeu pra cada EC alvo, por par e setor. Ao <b>trocar a adubação</b>, apague a memória do par — a próxima dosagem recalibra do zero (Modo 1).</div>
+      <div id="ferti-mem-list"><div style="color:var(--muted);font-size:13px">Aguardando memória...</div></div>
+    </div>
+
     <!-- Calibração do sensor de EC — wizard 2 pontos (envia calibrar_ec) -->
     <div class="card">
       <div class="card-title">Calibração do sensor de EC</div>
@@ -625,7 +636,7 @@ function showTab(name,el){
   if(name==='historico'){renderHistory();renderGraficos();}
   if(name==='sensores'){renderSubstratos();renderEstacao();}
   if(name==='conn')renderSistema();
-  if(name==='ferti'){populateSetorSelect();renderFertiSetores();loadFertiCurva();renderFertiStatus();}
+  if(name==='ferti'){populateSetorSelect();renderFertiSetores();loadFertiCurva();renderFertiStatus();renderFertiMem();}
 }
 
 var toastTimer;
@@ -665,6 +676,7 @@ function connect(){
     client.subscribe('fertigacao/status');
     client.subscribe('fertigacao/online');  // v1.5
     client.subscribe('fertigacao/curvas');  // v1.5: curvas/pares retained
+    client.subscribe('fertigacao/memoria'); // memoria EC aprendida (gestao/apagar)
     toast('✅ Conectado!');
     // v1.5: retoma sequência multi-zonas interrompida por reload/crash
     if(!mzResumed){mzResumed=true;mzResume();}
@@ -692,6 +704,7 @@ function connect(){
       else if(t===T+'/irrigation/history/daily')onDaily(d); // resumo diário (gráficos)
       else if(t==='fertigacao/status')onFertiStatus(d);
       else if(t==='fertigacao/curvas')onFertiCurvas(d); // v1.5
+      else if(t==='fertigacao/memoria')onFertiMem(d); // memoria EC aprendida
     }catch(e){}
   });
 }
@@ -1709,10 +1722,64 @@ function otaInjetora(){
 /* ===================================================================== */
 
 var lastFertiStatus=null;
+var fertiMem=null; // {metodo:'pwm'|'fluxo', memoria:{par:{setor:{bucket_uscm:pwm}}}}
 
 function onFertiStatus(data){
   lastFertiStatus=data;
   renderFertiStatus();
+}
+
+// ── Memória EC aprendida (topico retido fertigacao/memoria) ────────────
+function onFertiMem(d){
+  fertiMem=d||null;
+  if(document.getElementById('tab-ferti').style.display!=='none')renderFertiMem();
+}
+function renderFertiMem(){
+  var box=document.getElementById('ferti-mem-list');if(!box)return;
+  var mem=(fertiMem&&fertiMem.memoria)||{};
+  var metodo=(fertiMem&&fertiMem.metodo)||'';
+  var html='';
+  ['A','B','C'].forEach(function(par){
+    var setores=mem[par]||{};
+    var chaves=Object.keys(setores);
+    chaves.sort(function(a,b){return (a==='0'?9999:+a)-(b==='0'?9999:+b);}); // '0' generico por ultimo
+    var temEntrada=chaves.some(function(s){return Object.keys(setores[s]||{}).length;});
+    html+='<div style="border-top:1px solid var(--border);padding-top:8px;margin-top:8px">'
+       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">'
+       +'<b style="font-size:14px">Par '+par+'</b>'
+       +(temEntrada?'<button class="btn-off" style="padding:3px 9px;font-size:11px" onclick="apagarMemPar(\''+par+'\')">🗑 Apagar par (Modo 1)</button>':'')
+       +'</div>';
+    if(!temEntrada){
+      html+='<div style="font-size:12px;color:var(--muted)">sem memória — arranca no Modo 1</div>';
+    }else{
+      chaves.forEach(function(s){
+        var buckets=setores[s]||{};
+        var bks=Object.keys(buckets);if(!bks.length)return;
+        bks.sort(function(a,b){return +a-+b;});
+        html+='<div style="font-size:12px;color:var(--muted);margin:3px 0">'+(s==='0'?'genérico':'Setor '+s)+'</div>'
+           +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px">';
+        bks.forEach(function(bk){
+          html+='<span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-family:var(--mono);font-size:11px">'
+             +'EC '+(+bk/1000).toFixed(2)+' → '+buckets[bk]+'%'
+             +'<button title="Apagar esta entrada" style="border:none;background:none;color:#e66;cursor:pointer;font-size:13px;padding:0 2px;line-height:1" onclick="apagarMemEntrada(\''+par+'\',\''+s+'\','+bk+')">×</button>'
+             +'</span>';
+        });
+        html+='</div>';
+      });
+    }
+    html+='</div>';
+  });
+  if(metodo)html+='<div style="font-size:10px;color:var(--muted);margin-top:8px">método ativo: '+(metodo==='fluxo'?'FLUXO':'PWM')+'</div>';
+  box.innerHTML=html;
+}
+function apagarMemPar(par){
+  if(!confirm('Apagar TODA a memória EC do par '+par+'?\nA próxima dosagem recalibra do zero (Modo 1).'))return;
+  if(publishFerti({cmd:'limpar_memoria_ec',par:par}))
+    toast('🗑 Memória do par '+par+' apagada — Modo 1 na próxima dosagem');
+}
+function apagarMemEntrada(par,setor,ec){
+  if(publishFerti({cmd:'limpar_memoria_ec',par:par,setor:(setor==='0'?0:Number(setor)),ec:ec}))
+    toast('🗑 Entrada apagada (par '+par+', EC '+(ec/1000).toFixed(2)+')');
 }
 
 function renderFertiStatus(){
