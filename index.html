@@ -156,6 +156,16 @@ select.cfg-input{cursor:pointer}
 .ec-arrow{color:var(--muted);font-size:12px}
 .ec-val{font-size:13px;font-weight:700;color:var(--green);flex:1;text-align:right;font-family:var(--mono)}
 
+/* ===== Editor de layout: reordenar cards por aba (▲▼) ===== */
+#btn-layout{background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:5px 10px;font-size:15px;cursor:pointer;font-family:inherit;line-height:1}
+#btn-layout.on{background:var(--amber);color:#000;border-color:var(--amber)}
+.ro-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--surface2);border:1px dashed var(--amber);border-radius:8px;padding:6px 8px;margin-bottom:10px}
+.ro-name{font-size:11px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.5px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.ro-btns{display:flex;gap:6px;flex:none}
+.ro-btns button{width:36px;height:30px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;cursor:pointer}
+.ro-btns button:disabled{opacity:.3}
+.card.ro-on{border-color:var(--amber)}
+
 </style>
 </head>
 <body>
@@ -165,7 +175,10 @@ select.cfg-input{cursor:pointer}
     <div class="header-title">🌱 <span id="hdr-cliente">Irrigação</span></div>
     <div class="header-sub" id="rtc-display">Morango semi-hidropônico</div>
   </div>
-  <div class="conn-dot" id="conn-dot"></div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <button id="btn-layout" onclick="toggleLayoutEdit()" title="Organizar layout dos cards">⇅</button>
+    <div class="conn-dot" id="conn-dot"></div>
+  </div>
 </div>
 
 <div class="tabs">
@@ -183,6 +196,14 @@ select.cfg-input{cursor:pointer}
 <div class="container">
   <!-- v1.5: banner persistente — controlador offline / status atrasado -->
   <div id="esp-banner" class="banner" style="display:none"></div>
+
+  <!-- Editor de layout: barra visível só no modo Organizar -->
+  <div id="layout-tools" style="display:none;margin-bottom:10px">
+    <div class="info-box" style="line-height:1.6">
+      <strong>Organizar layout.</strong> Use ▲▼ pra mover os cards da aba atual. A ordem salva neste aparelho. Troque de aba pra organizar as outras.
+    </div>
+    <button class="btn-add" style="width:100%;padding:9px;margin-top:8px" onclick="resetLayout()">↺ Restaurar ordem padrão (todas as abas)</button>
+  </div>
 
   <button class="stop-btn" onclick="stopAll()">⛔ Parada de emergência</button>
 
@@ -322,6 +343,17 @@ select.cfg-input{cursor:pointer}
           <button class="btn-on" id="pwm-trim-save" onclick="savePwmTrim()" style="padding:6px 12px;font-size:12px">Salvar trim</button>
         </div>
       </div>
+    </div>
+
+    <!-- Horímetro de manutenção: horas reais de dosagem por bomba (rele fechado
+         + PWM>0), acumuladas pelo serviço horimetro_bombas.py no Pi. Odômetro:
+         mede a vida útil até a manutenção. Zerar após trocar/revisar a bomba. -->
+    <div class="card">
+      <div class="card-title">⏱ Horímetro das bombas (manutenção)
+        <button class="btn-off" onclick="resetHorimetro('all')" style="float:right;padding:4px 10px;font-size:12px">🗑 Zerar todas</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5">Horas reais de dosagem por bomba (relé fechado + PWM&gt;0). Zere ao trocar/revisar a bomba pra medir o próximo ciclo.</div>
+      <div id="horimetro-list"><div style="color:var(--muted);font-size:13px">Aguardando serviço do Pi (fertigacao/horimetro)...</div></div>
     </div>
 
     <!-- Memória EC aprendida por par×setor. Apagar força o Modo 1 (recalibra do
@@ -602,6 +634,7 @@ function init(){
   // v1.5: só auto-conecta se já tem senha salva (senha não vem mais no HTML)
   if(document.getElementById('inp-broker').value&&document.getElementById('inp-pass').value)connect();
   else if(!saved.pass)toast('Informe a senha na aba Conexão');
+  applyLayout('status'); // aba inicial: aplica ordem salva dos cards
   // v1.5: ticker global de 1s — timer, multi-zonas e banner
   setInterval(tickUI,1000);
 }
@@ -636,7 +669,10 @@ function showTab(name,el){
   if(name==='historico'){renderHistory();renderGraficos();}
   if(name==='sensores'){renderSubstratos();renderEstacao();}
   if(name==='conn')renderSistema();
-  if(name==='ferti'){populateSetorSelect();renderFertiSetores();loadFertiCurva();renderFertiStatus();renderFertiMem();}
+  if(name==='ferti'){populateSetorSelect();renderFertiSetores();loadFertiCurva();renderFertiStatus();renderFertiMem();renderHorimetro();}
+  currentTab=name;
+  applyLayout(name);
+  if(layoutEdit)renderEditBars(name);
 }
 
 var toastTimer;
@@ -678,6 +714,7 @@ function connect(){
     client.subscribe('fertigacao/curvas');  // v1.5: curvas/pares retained
     client.subscribe('fertigacao/config');  // setores+curvas (retido) — recarrega curva no browser limpo
     client.subscribe('fertigacao/memoria'); // memoria EC aprendida (gestao/apagar)
+    client.subscribe('fertigacao/horimetro'); // horas de manutencao por bomba (servico do Pi)
     toast('✅ Conectado!');
     // v1.5: retoma sequência multi-zonas interrompida por reload/crash
     if(!mzResumed){mzResumed=true;mzResume();}
@@ -707,6 +744,7 @@ function connect(){
       else if(t==='fertigacao/curvas')onFertiCurvas(d); // v1.5
       else if(t==='fertigacao/config')onFertiConfig(d); // setores+curvas (retido)
       else if(t==='fertigacao/memoria')onFertiMem(d); // memoria EC aprendida
+      else if(t==='fertigacao/horimetro')onHorimetro(d); // horas por bomba (Pi)
     }catch(e){}
   });
 }
@@ -1725,6 +1763,7 @@ function otaInjetora(){
 
 var lastFertiStatus=null;
 var fertiMem=null; // {metodo:'pwm'|'fluxo', memoria:{par:{setor:{bucket_uscm:pwm}}}}
+var horimetro=null; // {horas:{A1..C2}, reset:{A1..}, atualizado} do servico do Pi
 
 function onFertiStatus(data){
   lastFertiStatus=data;
@@ -1805,6 +1844,52 @@ function apagarMemPar(par){
 function apagarMemEntrada(par,setor,ec){
   if(publishFerti({cmd:'limpar_memoria_ec',par:par,setor:(setor==='0'?0:Number(setor)),ec:ec}))
     toast('🗑 Entrada apagada (par '+par+', EC '+(ec/1000).toFixed(2)+')');
+}
+
+/* ── Horímetro das bombas (odômetro de manutenção, vem do Pi) ── */
+function onHorimetro(d){
+  horimetro=d||null;
+  if(document.getElementById('tab-ferti').style.display!=='none')renderHorimetro();
+}
+// horas decimais -> "Xh YYmin" (ou "YYmin" quando < 1h)
+function fmtHoras(h){
+  if(h===undefined||h===null||isNaN(h))return '—';
+  var totMin=Math.round(h*60),hh=Math.floor(totMin/60),mm=totMin%60;
+  if(hh>0)return hh+'h'+(mm>0?' '+mm+'min':'');
+  return mm+'min';
+}
+function renderHorimetro(){
+  var el=document.getElementById('horimetro-list');if(!el)return;
+  if(!horimetro||!horimetro.horas){
+    el.innerHTML='<div style="color:var(--muted);font-size:13px">Aguardando serviço do Pi (fertigacao/horimetro)...</div>';
+    return;
+  }
+  var horas=horimetro.horas||{},reset=horimetro.reset||{};
+  var BOMBAS=['A1','A2','B1','B2','C1','C2'];
+  var maxH=0;BOMBAS.forEach(function(b){if((horas[b]||0)>maxH)maxH=horas[b]||0;});
+  el.innerHTML=BOMBAS.map(function(b){
+    var h=horas[b]||0;
+    var pct=maxH?Math.max(2,100*h/maxH):0;
+    var desde=reset[b]?('desde '+String(reset[b]).split(' ')[0]):'sem reset';
+    return '<div class="sector-row" style="align-items:center">'
+      +'<span class="sector-name" style="flex:0 0 34px;font-family:var(--mono)"><b>'+b+'</b></span>'
+      +'<span style="flex:1"><span style="display:block;background:var(--surface2);border-radius:4px;height:10px;overflow:hidden">'
+      +'<span style="display:block;height:100%;width:'+pct.toFixed(1)+'%;background:var(--green);border-radius:4px"></span></span>'
+      +'<span style="font-size:10px;color:var(--muted);font-family:var(--mono)">'+desde+'</span></span>'
+      +'<span style="flex:0 0 78px;text-align:right;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green)">'+fmtHoras(h)+'</span>'
+      +'<button class="btn-off" style="padding:4px 9px;font-size:12px" title="Zerar bomba '+b+'" onclick="resetHorimetro(\''+b+'\')">×</button>'
+      +'</div>';
+  }).join('')
+   +'<div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:8px">atualizado: '+escapeHtml(horimetro.atualizado||'—')+'</div>';
+}
+// Reset vai direto pro serviço do Pi (fertigacao/horimetro/reset), não pra
+// injetora. Payload: 'A1' (bomba) | 'A' (par) | 'all' (tudo).
+function resetHorimetro(alvo){
+  if(!client||!client.connected){toast('⚠ Sem conexão!');return;}
+  var txt=alvo==='all'?'TODAS as bombas':'a bomba '+alvo;
+  if(!confirm('Zerar o horímetro de '+txt+'?\nUse ao trocar/revisar — reinicia a contagem de horas.'))return;
+  client.publish('fertigacao/horimetro/reset',alvo,{qos:1});
+  toast('🗑 Horímetro zerado: '+(alvo==='all'?'todas':alvo));
 }
 
 function renderFertiStatus(){
@@ -2096,6 +2181,99 @@ function savePwmTrim(){
   if(publishFerti({cmd:'set_pwm_trim',trim:trim}))toast('🎛 Trim de PWM salvo');
 }
 function purgaAr(par,on){if(publishFerti({cmd:'purga',par:par,on:on}))toast(on?('💨 Purgando ar — par '+par):('Purga par '+par+' parada'));}
+
+/* ===================================================================== */
+/*  Editor de layout — reordena os cards (.card) dentro de cada aba.       */
+/*  Mobile-first: botoes ▲▼ por card (drag no celular e ruim). Ordem       */
+/*  salva por aba no localStorage. Nao toca elementos fixos (stop, banner, */
+/*  timer): so reordena os .card, preservando nao-cards no lugar.          */
+/* ===================================================================== */
+var LAYOUT_KEY='layout_ordem';
+var layoutEdit=false;
+var currentTab='status';
+
+function roCards(name){
+  var c=document.getElementById('tab-'+name);if(!c)return [];
+  return Array.prototype.filter.call(c.children,function(el){
+    return el.nodeType===1&&el.classList.contains('card');
+  });
+}
+function roSlug(s){
+  return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'').slice(0,40)||'card';
+}
+// Chave estavel por card (derivada do titulo). So atribui uma vez.
+function ensureRoKeys(name){
+  var used={};
+  roCards(name).forEach(function(el,i){
+    if(el.dataset.rokey){used[el.dataset.rokey]=1;return;}
+    var t=el.querySelector('.card-title');
+    var base=roSlug(t?t.textContent:('card-'+i));
+    var k=base,n=1;while(used[k])k=base+'-'+(n++);
+    used[k]=1;el.dataset.rokey=k;
+  });
+}
+function _layoutAll(){try{return JSON.parse(localStorage.getItem(LAYOUT_KEY)||'{}');}catch(e){return {};}}
+function applyLayout(name){
+  ensureRoKeys(name);
+  var ordem=_layoutAll()[name];if(!ordem||!ordem.length)return;
+  var c=document.getElementById('tab-'+name),cards=roCards(name);
+  if(!cards.length)return;
+  var byKey={};cards.forEach(function(el){byKey[el.dataset.rokey]=el;});
+  var anchor=cards[cards.length-1].nextSibling; // preserva nao-cards no fim
+  var seq=[],posto={};
+  ordem.forEach(function(k){if(byKey[k]){seq.push(byKey[k]);posto[k]=1;}});
+  cards.forEach(function(el){if(!posto[el.dataset.rokey])seq.push(el);}); // novos cards vao pro fim
+  seq.forEach(function(el){c.insertBefore(el,anchor);});
+}
+function saveLayout(name){
+  ensureRoKeys(name);
+  var all=_layoutAll();
+  all[name]=roCards(name).map(function(el){return el.dataset.rokey;});
+  try{localStorage.setItem(LAYOUT_KEY,JSON.stringify(all));}catch(e){}
+}
+function moveCard(name,key,dir){
+  var cards=roCards(name),idx=-1;
+  cards.forEach(function(el,i){if(el.dataset.rokey===key)idx=i;});
+  if(idx<0)return;var j=idx+dir;if(j<0||j>=cards.length)return;
+  var c=document.getElementById('tab-'+name);
+  if(dir<0)c.insertBefore(cards[idx],cards[j]);       // sobe: antes do anterior
+  else c.insertBefore(cards[j],cards[idx]);           // desce: proximo antes deste
+  saveLayout(name);
+  renderEditBars(name);
+}
+// Injeta/remove a barra ▲▼ como PRIMEIRO filho do card (renders internos
+// trocam innerHTML de sub-divs, nao o card, entao a barra sobrevive).
+function renderEditBars(name){
+  ensureRoKeys(name);
+  var cards=roCards(name);
+  cards.forEach(function(el,i){
+    var bar=(el.firstElementChild&&el.firstElementChild.classList.contains('ro-bar'))?el.firstElementChild:null;
+    if(layoutEdit){
+      if(!bar){bar=document.createElement('div');bar.className='ro-bar';el.insertBefore(bar,el.firstChild);}
+      var t=el.querySelector('.card-title');
+      var nome=t?t.textContent.replace(/\s+/g,' ').trim().slice(0,28):el.dataset.rokey;
+      bar.innerHTML='<span class="ro-name">⇅ '+escapeHtml(nome)+'</span>'
+        +'<span class="ro-btns">'
+        +'<button onclick="moveCard(\''+name+'\',\''+el.dataset.rokey+'\',-1)"'+(i===0?' disabled':'')+'>▲</button>'
+        +'<button onclick="moveCard(\''+name+'\',\''+el.dataset.rokey+'\',1)"'+(i===cards.length-1?' disabled':'')+'>▼</button>'
+        +'</span>';
+    }else if(bar){bar.remove();}
+    el.classList.toggle('ro-on',layoutEdit);
+  });
+}
+function toggleLayoutEdit(){
+  layoutEdit=!layoutEdit;
+  var b=document.getElementById('btn-layout');if(b)b.classList.toggle('on',layoutEdit);
+  var tools=document.getElementById('layout-tools');if(tools)tools.style.display=layoutEdit?'':'none';
+  // aplica/limpa as barras em TODAS as abas (evita barra orfã ao trocar de aba)
+  ['status','manual','config','sensores','historico','rtc','ferti','wifi','conn'].forEach(renderEditBars);
+  toast(layoutEdit?'Organizar: ▲▼ pra mover os cards':'✅ Layout salvo');
+}
+function resetLayout(){
+  if(!confirm('Restaurar a ordem padrão de TODAS as abas?'))return;
+  try{localStorage.removeItem(LAYOUT_KEY);}catch(e){}
+  toast('Ordem padrão restaurada — recarregue o app');
+}
 
 init();
 </script>
