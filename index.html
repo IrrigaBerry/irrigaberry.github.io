@@ -436,20 +436,28 @@ select.cfg-input{cursor:pointer}
 
   <div id="tab-wifi" style="display:none">
     <div class="card">
-      <div class="card-title">Configurar / reconfigurar WiFi do controlador</div>
-      <div class="info-box">
-        <strong>Primeiro uso:</strong> ao ligar o controlador, ele cria a rede WiFi <strong>Irrigacao-esp32_lavoura01</strong>.<br><br>
-        1. Conecte o celular nessa rede (senha: <strong>irrigacao123</strong>)<br>
-        2. Abra o navegador em <strong>192.168.4.1</strong><br>
-        3. Preencha o nome e senha do WiFi da lavoura<br>
-        4. O controlador reinicia conectado<br><br>
-        <strong>Para trocar o WiFi depois:</strong> use o botão abaixo.
+      <div class="card-title">Trocar rede WiFi</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:12px;line-height:1.6">
+        Use <strong>antes de levar o equipamento pra outra rede</strong>. O equipamento esquece o WiFi atual e,
+        ao ligar no lugar novo, abre a rede de configuração pra você cadastrar o WiFi novo.
+        <strong>Enquanto não for configurado, ele não irriga/dosa.</strong>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="save-btn" onclick="resetWifi('ctrl')">📶 Controlador</button>
+        <button class="save-btn" onclick="resetWifi('inj')">📶 Injetora</button>
+        <button class="save-btn" onclick="resetWifi('ambos')">📶 Os dois</button>
       </div>
     </div>
     <div class="card">
-      <div class="card-title">Forçar reconfiguração via MQTT</div>
-      <div style="font-size:13px;color:var(--muted);margin-bottom:12px;line-height:1.6">Envia comando para o controlador entrar em modo portal WiFi.</div>
-      <button class="save-btn" onclick="forcarReconfig()">📶 Resetar WiFi</button>
+      <div class="card-title">Cadastrar o WiFi novo (no local)</div>
+      <div class="info-box">
+        1. Ligue o equipamento. No visor aparece <strong>IB-Controlador</strong> ou <strong>IB-Injetora</strong> e <strong>192.168.4.1</strong>.<br>
+        2. No celular, conecte na rede <strong>IB-Controlador</strong> (ou <strong>IB-Injetora</strong>), senha <strong>irrigacao123</strong>.<br>
+        3. Abra o navegador em <strong>192.168.4.1</strong>.<br>
+        4. Digite o nome e a senha do WiFi do local e toque em <strong>Salvar</strong>.<br>
+        5. O equipamento reinicia, conecta e aparece online aqui no app em ~1 minuto.<br><br>
+        Faça o mesmo na injetora. O servidor (Pi) fica ligado no <strong>cabo</strong> do roteador.
+      </div>
     </div>
   </div>
 
@@ -1586,7 +1594,17 @@ function stopAll(){
   publish({cmd:'stop_all'},true);
   toast('⛔ Parada de emergência enviada!');
 }
-function forcarReconfig(){if(publish({cmd:'reset_wifi'}))toast('Comando enviado! Controlador entrará em modo portal.');}
+function forcarReconfig(){resetWifi('ctrl');}
+// Trocar de rede: o ESP apaga o WiFi salvo e reinicia no portal (IB-Controlador /
+// IB-Injetora, 192.168.4.1). Usar ANTES de levar o equipamento pra rede nova.
+function resetWifi(alvo){
+  var nome=alvo==='ctrl'?'o CONTROLADOR':alvo==='inj'?'a INJETORA':'o CONTROLADOR e a INJETORA';
+  if(!confirm('Apagar o WiFi salvo de '+nome+'?\n\nEle sai do ar agora e só volta depois de cadastrar o WiFi novo pela rede IB-... (192.168.4.1). Enquanto isso NÃO irriga/dosa.'))return;
+  var ok=false;
+  if(alvo!=='inj')ok=publish({cmd:'reset_wifi'})||ok;
+  if(alvo!=='ctrl')ok=publishFerti({cmd:'reset_wifi'})||ok;
+  if(ok)toast('📶 WiFi resetado: '+nome+' vai abrir a rede de configuração.');
+}
 
 /* ===================================================================== */
 /*  Aba SENSORES: nos de substrato (umidade + EC)                         */
