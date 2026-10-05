@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#0f1117">
 <title>IrrigaBerry — Irrigação</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+<script>/* modo LOCAL sem internet: o CDN nao responde -> usa a copia servida pelo Pi */if(!window.mqtt)document.write('<script src="mqtt.min.js"><\/script>');</script>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3248;--text:#e8eaf6;--muted:#7b80a0;--green:#00e5a0;--red:#ff4d6d;--amber:#ffb830;--blue:#4d9fff;--radius:12px;--radius-sm:8px;--mono:'Space Mono',monospace;--sans:'Syne',sans-serif}
@@ -613,7 +614,29 @@ function ensureSetor(sid){
 function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function escapeAttr(s){return escapeHtml(s);}
 
+// v2.0: MODO LOCAL (sem internet). Aberto pelo endereço do Pi na rede do
+// cliente (http://IP-do-Pi), o Pi entrega local-cfg.json (usuário/senha do app,
+// cliente, add-ons) e o app conecta direto no broker do Pi (ws://IP/mqtt),
+// sem passar pela internet. Pelo link normal (github.io) nada muda.
+var IB_LOCAL=false;
 function init(){
+  if(location.protocol==='http:'){
+    fetch('local-cfg.json',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(c){
+      if(!c||!c.pass)return;
+      var s=JSON.parse(localStorage.getItem('mqtt_cfg')||'{}');
+      ['user','pass','cliente','substrato','estacao'].forEach(function(k){if(c[k]!==undefined&&c[k]!==null&&c[k]!=='')s[k]=String(c[k]);});
+      s.broker=location.hostname; s.port=location.port||'80';
+      localStorage.setItem('mqtt_cfg',JSON.stringify(s));
+      IB_LOCAL=true;
+    }).catch(function(){}).then(function(){
+      initApp();
+      if(IB_LOCAL)toast('📡 Modo local: conectado direto no servidor (sem internet)');
+    });
+    return;
+  }
+  initApp();
+}
+function initApp(){
   // v1.8: provisionamento por cliente. O link único do kit injeta a config na
   // 1a abertura:  ?broker=host.ts.net&port=443&user=webapp&pass=SENHA&cliente=Nome
   // Prioridade: URL (link do kit) > localStorage (já salvo neste aparelho).
