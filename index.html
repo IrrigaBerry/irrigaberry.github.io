@@ -342,6 +342,20 @@ select.cfg-input{cursor:pointer}
           <button class="btn-on" id="pwm-trim-save" onclick="savePwmTrim()" style="padding:6px 12px;font-size:12px">Salvar trim</button>
         </div>
       </div>
+
+      <!-- Quantidade de pares de bombas (1..5 = A..E). Pra quando o cliente
+           instala mais (ou menos) bombas depois. Firmware: cmd set_n_pares
+           -> grava e reinicia a injetora; o app se ajusta pelo config retido. -->
+      <div id="n-pares-box" style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:3px">🧪 Pares de bombas da injetora</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Use quando instalar mais (ou retirar) bombas. Cada par = 2 bombas + 1 relé. A injetora reinicia (~1 min) e a tela se ajusta sozinha.</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:13px">
+          <select id="n-pares-sel" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px">
+            <option value="1">1 par (A)</option><option value="2">2 pares (A-B)</option><option value="3">3 pares (A-C)</option><option value="4">4 pares (A-D)</option><option value="5">5 pares (A-E)</option>
+          </select>
+          <button class="btn-on" onclick="alterarPares()" style="padding:6px 12px;font-size:12px">Alterar</button>
+        </div>
+      </div>
     </div>
 
     <!-- Horímetro de manutenção: horas reais de dosagem por bomba (rele fechado
@@ -742,6 +756,7 @@ function connect(){
     client.subscribe('fertigacao/config');  // setores+curvas (retido) — recarrega curva no browser limpo
     client.subscribe('fertigacao/memoria'); // memoria EC aprendida (gestao/apagar)
     client.subscribe('fertigacao/horimetro'); // horas de manutencao por bomba (servico do Pi)
+    client.subscribe('fertigacao/log'); // respostas da injetora aos comandos (ex: recusado/reiniciando)
     toast('✅ Conectado!');
     // v1.5: retoma sequência multi-zonas interrompida por reload/crash
     if(!mzResumed){mzResumed=true;mzResume();}
@@ -772,6 +787,7 @@ function connect(){
       else if(t==='fertigacao/config')onFertiConfig(d); // setores+curvas (retido)
       else if(t==='fertigacao/memoria')onFertiMem(d); // memoria EC aprendida
       else if(t==='fertigacao/horimetro')onHorimetro(d); // horas por bomba (Pi)
+      else if(t==='fertigacao/log'&&d&&d.msg)toast('🧪 Injetora: '+d.msg); // nao retido: so respostas novas
     }catch(e){}
   });
 }
@@ -1819,6 +1835,8 @@ function renderParesUI(){
       return '<div style="display:flex;align-items:center;gap:5px"><b>'+p+'</b>1<input id="trim-'+p+'1" '+inp+' value="'+(pt[p+'1']||0)+'">2<input id="trim-'+p+'2" '+inp+' value="'+(pt[p+'2']||0)+'"></div>';
     }).join('');
   }
+  var ns=document.getElementById('n-pares-sel');
+  if(ns&&document.activeElement!==ns)ns.value=String(fertiPares.length);
   var pg=document.getElementById('purga-rows');
   if(pg){
     pg.innerHTML=fertiPares.map(function(p,i){
@@ -1827,6 +1845,21 @@ function renderParesUI(){
   }
 }
 renderParesUI();
+
+// Cliente aumentou/diminuiu bombas: injetora grava n_pares e reinicia.
+function alterarPares(){
+  var sel=document.getElementById('n-pares-sel');
+  var n=parseInt(sel.value,10), atual=fertiPares.length;
+  if(!(n>=1&&n<=5))return;
+  if(n===atual){toast('Já está com '+n+(n>1?' pares':' par'));return;}
+  var letras='ABCDE'.substr(0,n).split('').join(', ');
+  var msg='Mudar de '+atual+' para '+n+(n>1?' pares':' par')+' de bombas ('+letras+')?\n\n'
+    +'• As bombas/relés novos precisam estar INSTALADOS e ligados.\n'
+    +'• A injetora vai REINICIAR (~1 min) - não faça durante a fertirrigação.';
+  if(n<atual)msg+='\n• Setores que usam os pares retirados passam para o par A (confira depois).';
+  if(!confirm(msg)){sel.value=String(atual);return;}
+  if(publishFerti({cmd:'set_n_pares',n:n}))toast('🧪 Alterando para '+n+(n>1?' pares':' par')+' - a injetora vai reiniciar');
+}
 
 function onFertiStatus(data){
   lastFertiStatus=data;
